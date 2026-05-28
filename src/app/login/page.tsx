@@ -85,7 +85,7 @@ export default function LoginPage() {
             type={mode === "register" ? "email" : "text"}
             autoCapitalize="none"
             autoCorrect="off"
-            placeholder={mode === "register" ? "email@exemplo.com" : "email ou admLaio"}
+            placeholder={mode === "register" ? "email@exemplo.com" : "email@exemplo.com"}
             className="w-full pl-11 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-ios-blue/20"
           />
         </label>
@@ -105,18 +105,6 @@ export default function LoginPage() {
 
         {error && <p className="text-sm font-medium text-red-500">{error}</p>}
 
-        {mode === "login" && (
-          <button
-            type="button"
-            onClick={() => {
-              setEmail("admLaio");
-              setPassword("123456");
-            }}
-            className="w-full p-3 bg-blue-50 text-ios-blue rounded-xl font-semibold text-sm"
-          >
-            Usar teste: admLaio / 123456
-          </button>
-        )}
 
         <button
           disabled={submitting}
