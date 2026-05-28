@@ -1,61 +1,197 @@
 "use client";
 
-import { Search, UserPlus, MessageCircle, ChevronRight } from "lucide-react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { ChevronRight, Search, UserPlus, X } from "lucide-react";
+import ChargeMessageButton from "@/components/ChargeMessageButton";
+import MobileHeader from "@/components/MobileHeader";
+import { SkeletonListItem } from "@/components/Skeleton";
+import { useAppData } from "@/hooks/useAppData";
+import { formatCurrency } from "@/lib/format";
+
+type DebtorFilter = "open" | "overdue" | "due-today";
+
+const filterOptions: Array<{ value: DebtorFilter; label: string }> = [
+  { value: "open", label: "Em aberto" },
+  { value: "overdue", label: "Atrasadas" },
+  { value: "due-today", label: "Vence hoje" },
+];
 
 export default function DebtorsPage() {
-    return (
-        <div className="p-4 space-y-6 page-transition">
-            <header className="flex justify-between items-center py-2">
-                <h1 className="text-2xl font-bold tracking-tight">Devedores</h1>
-                <button className="bg-emerald-100 text-emerald-700 p-2 rounded-xl active:scale-95 transition-transform">
-                    <UserPlus size={24} />
-                </button>
-            </header>
+  const { debts, loading, profile, user } = useAppData();
+  const searchParams = useSearchParams();
+  const [search, setSearch] = useState("");
+  const currentFilter = getFilter(searchParams.get("filter"));
 
-            {/* Search Bar */}
-            <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                <input
-                    type="text"
-                    placeholder="Buscar por nome..."
-                    className="w-full pl-10 pr-4 py-3 glass rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                />
-            </div>
+  const debtors = useMemo(() => {
+    const grouped = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        phone: string;
+        amount: number;
+        debts: number;
+        overdue: number;
+        maxDaysOverdue: number;
+        dueToday: number;
+        avatar: string;
+      }
+    >();
 
-            {/* Debtors List */}
-            <div className="space-y-4">
-                {[
-                    { name: "João da Silva", amount: "R$ 150,00", debts: 1, avatar: "JS" },
-                    { name: "Maria Oliveira", amount: "R$ 450,00", debts: 3, avatar: "MO" },
-                    { name: "Carlos Souza", amount: "R$ 30,00", debts: 1, avatar: "CS" },
-                    { name: "Ana Beatriz", amount: "R$ 0,00", debts: 0, avatar: "AB" },
-                ].map((debtor) => (
-                    <div key={debtor.name} className="glass p-4 rounded-3xl flex items-center gap-4 active:bg-white/50 transition-colors">
-                        <div className="w-14 h-14 rounded-2xl bg-secondary/10 flex items-center justify-center text-secondary font-bold text-lg border border-secondary/20">
-                            {debtor.avatar}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <h4 className="font-bold text-base truncate">{debtor.name}</h4>
-                            <p className="text-xs text-gray-500">
-                                {debtor.debts > 0 ? `${debtor.debts} dívidas em aberto` : "Sem dívidas"}
-                            </p>
-                        </div>
-                        <div className="text-right flex flex-col items-end gap-2">
-                            <p className={debtor.amount !== "R$ 0,00" ? "font-bold text-sm" : "text-gray-400 text-sm"}>
-                                {debtor.amount}
-                            </p>
-                            <div className="flex gap-2">
-                                <button className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                                    <MessageCircle size={16} />
-                                </button>
-                                <button className="w-8 h-8 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center">
-                                    <ChevronRight size={16} />
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
+    debts
+      .filter((debt) => {
+        if (debt.status !== "open") return false;
+        if (currentFilter === "overdue") return debt.isOverdue;
+        if (currentFilter === "due-today") return !debt.isOverdue && debt.daysUntilDue === 0;
+        return true;
+      })
+      .forEach((debt) => {
+        const current = grouped.get(debt.customerId) || {
+          id: debt.customerId,
+          name: debt.customerName,
+          phone: debt.customerPhone,
+          amount: 0,
+          debts: 0,
+          overdue: 0,
+          maxDaysOverdue: 0,
+          dueToday: 0,
+          avatar: debt.customerName.slice(0, 2).toUpperCase(),
+        };
+
+        current.amount += debt.outstandingAmount;
+        current.debts += 1;
+        current.overdue += debt.isOverdue ? 1 : 0;
+        current.maxDaysOverdue = Math.max(current.maxDaysOverdue, debt.daysOverdue);
+        current.dueToday += !debt.isOverdue && debt.daysUntilDue === 0 ? 1 : 0;
+        grouped.set(debt.customerId, current);
+      });
+
+    return Array.from(grouped.values())
+      .filter((debtor) => debtor.name.toLowerCase().includes(search.toLowerCase()))
+      .sort((a, b) => b.overdue - a.overdue || b.amount - a.amount);
+  }, [currentFilter, debts, search]);
+
+  return (
+    <div className="p-5 pb-28 space-y-5 page-transition">
+      <MobileHeader
+        title="Devedores"
+        fallbackHref="/"
+        action={
+          <Link
+            href="/new-debt"
+            className="w-10 h-10 rounded-xl bg-gray-100 text-gray-600 flex items-center justify-center btn-press hover:bg-gray-200 transition-colors"
+            aria-label="Nova divida"
+          >
+            <UserPlus size={20} strokeWidth={1.8} />
+          </Link>
+        }
+      />
+
+      <div className="relative">
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          type="text"
+          placeholder="Buscar por nome..."
+          className="w-full pl-10 pr-10 py-3 bg-gray-50 border border-gray-100 rounded-xl text-sm placeholder:text-gray-300 transition-all"
+        />
+        {search && (
+          <button
+            type="button"
+            onClick={() => setSearch("")}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-white text-gray-400 flex items-center justify-center shadow-ios"
+            aria-label="Limpar busca"
+          >
+            <X size={15} />
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-1 p-1 bg-gray-50 rounded-xl">
+        {filterOptions.map((option) => (
+          <Link
+            key={option.value}
+            href={`/debtors?filter=${option.value}`}
+            className={`py-2 rounded-lg text-xs font-semibold text-center transition ${
+              currentFilter === option.value ? "bg-white text-gray-950 shadow-ios" : "text-gray-400"
+            }`}
+          >
+            {option.label}
+          </Link>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="space-y-2">
+          <SkeletonListItem />
+          <SkeletonListItem />
+          <SkeletonListItem />
         </div>
-    );
+      ) : debtors.length === 0 ? (
+        <div className="card rounded-[14px] p-6 text-center">
+          <p className="font-semibold text-gray-900">Nenhum resultado neste filtro</p>
+          <p className="text-sm text-gray-400 mt-1">Tente outro filtro ou busque por outro nome.</p>
+        </div>
+      ) : (
+        <div className="space-y-2 stagger-fade">
+          {debtors.map((debtor) => (
+            <div key={debtor.id} className="card rounded-[14px] p-4 flex items-center gap-3 btn-press">
+              <Link href={`/debtors/${debtor.id}`} className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="w-11 h-11 rounded-xl bg-gray-100 flex items-center justify-center text-gray-500 font-medium text-xs border border-gray-200">
+                  {debtor.avatar}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-medium text-sm text-gray-900 truncate">{debtor.name}</h4>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {debtor.debts} divida{debtor.debts > 1 ? "s" : ""} em aberto
+                  </p>
+                  {(debtor.overdue > 0 || debtor.dueToday > 0) && (
+                    <p className={`text-[11px] font-semibold mt-1 ${debtor.overdue > 0 ? "text-red-500" : "text-blue-500"}`}>
+                      {debtor.overdue > 0
+                        ? `${debtor.overdue} atrasada${debtor.overdue === 1 ? "" : "s"}`
+                        : `${debtor.dueToday} vence${debtor.dueToday === 1 ? "" : "m"} hoje`}
+                    </p>
+                  )}
+                </div>
+              </Link>
+              <div className="text-right flex flex-col items-end gap-2">
+                <p className="font-semibold text-sm text-gray-900">{formatCurrency(debtor.amount)}</p>
+                <div className="flex gap-1.5">
+                  <ChargeMessageButton
+                    amount={debtor.amount}
+                    customerId={debtor.id}
+                    daysOverdue={debtor.maxDaysOverdue}
+                    debtorName={debtor.name}
+                    debtsCount={debtor.debts}
+                    defaultTone={debtor.overdue > 0 ? "overdue" : "friendly"}
+                    iconSize={14}
+                    phone={debtor.phone}
+                    pixKey={profile?.pixKey}
+                    userId={user?.id}
+                    className="w-7 h-7 rounded-lg bg-gray-50 text-gray-400 flex items-center justify-center hover:bg-gray-100 transition-colors"
+                  />
+                  <Link
+                    href={`/debtors/${debtor.id}`}
+                    className="w-7 h-7 rounded-lg bg-gray-50 text-gray-300 flex items-center justify-center hover:bg-gray-100 transition-colors"
+                    aria-label={`Ver detalhes de ${debtor.name}`}
+                  >
+                    <ChevronRight size={14} />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function getFilter(value: string | null): DebtorFilter {
+  if (value === "overdue" || value === "due-today" || value === "open") return value;
+
+  return "open";
 }

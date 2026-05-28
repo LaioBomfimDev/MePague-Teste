@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Me Pague">
+  <rect width="512" height="512" rx="112" fill="#111827"/>
+  <path d="M132 334V178h55l69 86 69-86h55v156h-49V247l-56 68h-38l-56-68v87h-49Z" fill="#FFFFFF"/>
+  <circle cx="256" cy="376" r="28" fill="#34C759"/>
+</svg>

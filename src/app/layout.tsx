@@ -1,9 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
-import BottomNav from "@/components/BottomNav";
+import AppShell from "@/components/AppShell";
+import { AuthProvider } from "@/components/AuthProvider";
 
-const inter = Inter({ subsets: ["latin"] });
+const geist = localFont({
+  src: "./fonts/GeistVF.woff",
+  variable: "--font-geist",
+});
 
 export const metadata: Metadata = {
   title: "Me Pague",
@@ -17,7 +21,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#059669",
+  themeColor: "#FFFFFF",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -36,11 +40,10 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       </head>
-      <body className={inter.className}>
-        <main className="min-h-screen pb-20">
-          {children}
-        </main>
-        <BottomNav />
+      <body className={`${geist.className} bg-white text-black min-h-screen selection:bg-ios-blue selection:text-white`}>
+        <AuthProvider>
+          <AppShell>{children}</AppShell>
+        </AuthProvider>
       </body>
     </html>
   );

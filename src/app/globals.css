@@ -3,59 +3,209 @@
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 249, 250, 251; /* Gray 50 */
-  --background-end-rgb: 255, 255, 255;
-  
-  --primary: 5, 150, 105; /* Emerald 600 */
-  --primary-dark: 4, 120, 87;
-  --secondary: 14, 165, 233; /* Sky 500 */
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 17, 24, 39; /* Gray 900 */
-    --background-end-rgb: 0, 0, 0;
-  }
+  --background: #FFFFFF;
+  --foreground: #1C1C1E;
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
-  min-height: 100vh;
-  -webkit-tap-highlight-color: transparent;
+  color: var(--foreground);
+  background: var(--background);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-attachment: fixed;
 }
 
-/* Custom Utilities */
-.glass {
-  background: rgba(255, 255, 255, 0.7);
+@layer components {
+
+  /* iOS Tile Style */
+  .ios-tile {
+    @apply bg-white shadow-ios rounded-[1.3rem] border border-black/[0.03] transition-all duration-200 active:scale-[0.98] active:opacity-90;
+  }
+
+  /* iOS Button Style */
+  .ios-btn {
+    @apply bg-ios-blue text-white font-semibold py-3.5 px-6 rounded-2xl active:scale-[0.97] transition-all duration-200 flex items-center justify-center gap-2;
+  }
+
+  /* iOS Secondary Button */
+  .ios-btn-secondary {
+    @apply bg-gray-100 text-black font-semibold py-3.5 px-6 rounded-2xl active:scale-[0.97] transition-all duration-200 flex items-center justify-center gap-2;
+  }
+
+  /* iOS Input Style */
+  .ios-input {
+    @apply w-full p-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-ios-blue/30 transition-all duration-200 outline-none;
+  }
+
+  .card {
+    @apply bg-white border border-gray-100 shadow-ios;
+  }
+
+  .btn-press {
+    @apply transition-all duration-150 active:scale-[0.98] active:opacity-90;
+  }
+
+  .skeleton {
+    @apply bg-gray-100 animate-pulse;
+  }
+}
+
+/* iOS-style Fade In */
+.ios-fade-in {
+  animation: iosFadeIn 0.5s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes iosFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Staggered entry */
+.stagger-1 {
+  animation-delay: 0.1s;
+}
+
+.stagger-2 {
+  animation-delay: 0.2s;
+}
+
+.stagger-3 {
+  animation-delay: 0.3s;
+}
+
+/* Bottom Nav Glass Effect - Optimized */
+.ios-glass {
+  background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
-.dark .glass {
-  background: rgba(17, 24, 39, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* Bottom Nav Padding */
+/* Safe Area */
 .pb-safe {
-  padding-bottom: env(safe-area-inset-bottom, 1rem);
+  padding-bottom: env(safe-area-inset-bottom, 16px);
 }
 
-/* Transitions */
 .page-transition {
-  animation: fadeIn 0.3s ease-in-out;
+  animation: pageSlideUp 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+.stagger-fade > * {
+  animation: pageSlideUp 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.stagger-fade > *:nth-child(2) {
+  animation-delay: 45ms;
+}
+
+.stagger-fade > *:nth-child(3) {
+  animation-delay: 90ms;
+}
+
+.stagger-fade > *:nth-child(4) {
+  animation-delay: 135ms;
+}
+
+.stagger-fade > *:nth-child(5) {
+  animation-delay: 180ms;
+}
+
+.page-slide-left {
+  animation: slideFromRight 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.page-slide-right {
+  animation: slideFromLeft 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.page-header-enter {
+  animation: headerDrop 0.28s ease-out both;
+}
+
+.toast-enter {
+  animation: toastPop 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.success-pulse {
+  animation: successPulse 0.42s ease-out both;
+}
+
+@keyframes pageSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideFromLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes headerDrop {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toastPop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+@keyframes successPulse {
+  0% {
+    transform: scale(1);
+  }
+
+  45% {
+    transform: scale(1.03);
+  }
+
+  100% {
+    transform: scale(1);
+  }
 }
