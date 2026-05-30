@@ -1,7 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { addMonthsToDateString, addWeeksToDateString, getInitials, normalizePhone, toDateInputValue } from "@/lib/format";
-import type { ChargeLog, ChargeLogAction, Customer, Debt, MessageTone, Payment, UserProfile } from "@/lib/types";
+import type { ChargeLog, ChargeLogAction, Customer, Debt, MessageTone, Payment, UserProfile, UserRole, UserStatus } from "@/lib/types";
 
 type Unsubscribe = () => void;
 type DemoStore = {
@@ -23,6 +23,12 @@ type ProfileRow = {
   email: string;
   pix_key: string;
   plan: "free" | "pro";
+  role?: UserRole;
+  status?: UserStatus;
+  admin_notes?: string;
+  status_reason?: string;
+  status_changed_at?: string;
+  status_changed_by?: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -129,6 +135,10 @@ function createDefaultDemoStore(): DemoStore {
       email: "admLaio",
       pixKey: "teste@pix",
       plan: "pro",
+      role: "user",
+      status: "active",
+      adminNotes: "",
+      statusReason: "",
       createdAt: demoTimestamp(-20),
     },
     customers,
@@ -271,6 +281,10 @@ function createLocalId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function createRealtimeChannelName(prefix: string, ...parts: string[]) {
+  return [prefix, ...parts, createLocalId("sub")].join(":");
+}
+
 function createDemoDebtWithCustomer(input: {
   name: string;
   phone: string;
@@ -334,6 +348,12 @@ function mapProfile(row: ProfileRow): UserProfile {
     email: row.email,
     pixKey: row.pix_key,
     plan: row.plan,
+    role: row.role || "user",
+    status: row.status || "active",
+    adminNotes: row.admin_notes || "",
+    statusReason: row.status_reason || "",
+    statusChangedAt: row.status_changed_at,
+    statusChangedBy: row.status_changed_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -509,12 +529,70 @@ export async function ensureUserProfile(user: User) {
       email: user.email || "",
       pix_key: "",
       plan: "free",
+      role: "user",
+      status: "pending",
       updated_at: new Date().toISOString(),
     },
     { onConflict: "id", ignoreDuplicates: true },
   );
 
   if (error) throw error;
+}
+
+export async function getUserAccessState(user: User): Promise<{
+  allowed: boolean;
+  message?: string;
+  profile: UserProfile | null;
+}> {
+  if (isDemoUid(user.id)) {
+    return { allowed: true, profile: createDefaultDemoStore().profile };
+  }
+
+  await ensureUserProfile(user);
+
+  const profile = await fetchUserProfile(user.id);
+
+  if (!profile) {
+    return {
+      allowed: false,
+      message: "Perfil nao encontrado. Fale com o suporte.",
+      profile: null,
+    };
+  }
+
+  if (profile.status === "blocked") {
+    return {
+      allowed: false,
+      message: "Sua conta esta bloqueada. Fale com o superadm.",
+      profile,
+    };
+  }
+
+  if (profile.status === "pending") {
+    return {
+      allowed: false,
+      message: "Cadastro recebido. Aguarde a aprovacao do superadm para entrar.",
+      profile,
+    };
+  }
+
+  if (profile.status === "inactive") {
+    return {
+      allowed: false,
+      message: "Sua conta esta inativa. Fale com o suporte.",
+      profile,
+    };
+  }
+
+  if (profile.status === "deleted") {
+    return {
+      allowed: false,
+      message: "Esta conta foi excluida do acesso ao app.",
+      profile,
+    };
+  }
+
+  return { allowed: true, profile };
 }
 
 export function subscribeUserProfile(uid: string, callback: (profile: UserProfile | null) => void): Unsubscribe {
@@ -525,7 +603,7 @@ export function subscribeUserProfile(uid: string, callback: (profile: UserProfil
   fetchUserProfile(uid).then(callback).catch(() => callback(null));
 
   const channel = supabase
-    .channel(`profile:${uid}`)
+    .channel(createRealtimeChannelName("profile", uid))
     .on("postgres_changes", { event: "*", schema: "public", table: "profiles", filter: `id=eq.${uid}` }, async () => {
       callback(await fetchUserProfile(uid));
     })
@@ -569,7 +647,7 @@ export function subscribeCustomers(uid: string, callback: (customers: Customer[]
   fetchCustomers(uid).then(callback).catch(() => callback([]));
 
   const channel = supabase
-    .channel(`customers:${uid}`)
+    .channel(createRealtimeChannelName("customers", uid))
     .on("postgres_changes", { event: "*", schema: "public", table: "customers", filter: `user_id=eq.${uid}` }, async () => {
       callback(await fetchCustomers(uid));
     })
@@ -588,7 +666,7 @@ export function subscribeDebts(uid: string, callback: (debts: Debt[]) => void): 
   fetchDebts(uid).then(callback).catch(() => callback([]));
 
   const channel = supabase
-    .channel(`debts:${uid}`)
+    .channel(createRealtimeChannelName("debts", uid))
     .on("postgres_changes", { event: "*", schema: "public", table: "debts", filter: `user_id=eq.${uid}` }, async () => {
       callback(await fetchDebts(uid));
     })
@@ -607,7 +685,7 @@ export function subscribePayments(uid: string, callback: (payments: Payment[]) =
   fetchPayments(uid).then(callback).catch(() => callback([]));
 
   const channel = supabase
-    .channel(`payments:${uid}`)
+    .channel(createRealtimeChannelName("payments", uid))
     .on("postgres_changes", { event: "*", schema: "public", table: "payments", filter: `user_id=eq.${uid}` }, async () => {
       callback(await fetchPayments(uid));
     })
@@ -626,7 +704,7 @@ export function subscribeChargeLogs(uid: string, callback: (chargeLogs: ChargeLo
   fetchChargeLogs(uid).then(callback).catch(() => callback([]));
 
   const channel = supabase
-    .channel(`charge_logs:${uid}`)
+    .channel(createRealtimeChannelName("charge_logs", uid))
     .on("postgres_changes", { event: "*", schema: "public", table: "charge_logs", filter: `user_id=eq.${uid}` }, async () => {
       callback(await fetchChargeLogs(uid));
     })
@@ -979,7 +1057,7 @@ export function subscribeOpenDebtsByCustomer(
   fetchOpenDebts().then(callback).catch(() => callback([]));
 
   const channel = supabase
-    .channel(`debts:${uid}:${customerId}`)
+    .channel(createRealtimeChannelName("debts", uid, customerId))
     .on("postgres_changes", { event: "*", schema: "public", table: "debts", filter: `customer_id=eq.${customerId}` }, async () => {
       callback(await fetchOpenDebts());
     })

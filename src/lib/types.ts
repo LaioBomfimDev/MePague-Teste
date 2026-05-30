@@ -1,6 +1,9 @@
 export type DebtStatus = "open" | "paid";
 export type MessageTone = "friendly" | "firm" | "overdue";
 export type ChargeLogAction = "copied" | "sent";
+export type UserRole = "user" | "support" | "operations" | "admin" | "superadmin";
+export type UserStatus = "pending" | "active" | "inactive" | "blocked" | "deleted";
+export type RiskLevel = "low" | "medium" | "high";
 
 export type UserProfile = {
   id: string;
@@ -8,6 +11,12 @@ export type UserProfile = {
   email: string;
   pixKey: string;
   plan: "free" | "pro";
+  role: UserRole;
+  status: UserStatus;
+  adminNotes?: string;
+  statusReason?: string;
+  statusChangedAt?: string;
+  statusChangedBy?: string | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -83,4 +92,43 @@ export type DashboardStats = {
   overdueCount: number;
   openCount: number;
   paidCount: number;
+};
+
+export type AdminUserSummary = {
+  id: string;
+  name: string;
+  email: string;
+  plan: "free" | "pro";
+  role: UserRole;
+  status: UserStatus;
+  authCreatedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  lastSignInAt?: string | null;
+  emailConfirmedAt?: string | null;
+  adminNotes: string;
+  statusReason: string;
+  statusChangedAt?: string | null;
+  statusChangedBy?: string | null;
+  deletedAt?: string | null;
+  daysSinceCreated: number | null;
+  daysSinceLastSignIn: number | null;
+  riskLevel: RiskLevel;
+  riskScore: number;
+  riskTags: string[];
+  recentSensitiveActionAt?: string | null;
+};
+
+export type AuditLog = {
+  id: string;
+  actorId?: string | null;
+  actorEmail: string;
+  targetUserId?: string | null;
+  action: string;
+  tableName?: string | null;
+  recordId?: string | null;
+  oldData?: Record<string, unknown> | null;
+  newData?: Record<string, unknown> | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
 };

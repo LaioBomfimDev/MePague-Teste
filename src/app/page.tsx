@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, ArrowRight, CalendarClock, PieChart, Plus, TrendingUp, Wallet } from "lucide-react";
+import Image from "next/image";
 import ChargeMessageButton from "@/components/ChargeMessageButton";
 import { useAppData } from "@/hooks/useAppData";
 import {
@@ -60,9 +61,12 @@ export default function Dashboard() {
   return (
     <div className="p-6 pb-32 space-y-7 ios-fade-in">
       <header className="pt-4 flex justify-between items-center px-1">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-black">Inicio</h1>
-          <p className="text-ios-gray text-sm font-medium">Controle de debitos</p>
+        <div className="flex items-center gap-3">
+          <Image src="/logo.jpeg" alt="Me Pague Logo" width={44} height={44} className="rounded-xl shadow-sm" />
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-black">Me Pague</h1>
+            <p className="text-ios-gray text-[13px] font-medium leading-tight">Controle de debitos</p>
+          </div>
         </div>
         <div className="w-11 h-11 bg-gray-100 rounded-full flex items-center justify-center text-black font-semibold overflow-hidden">
           {profile?.name?.[0]?.toUpperCase() || "M"}

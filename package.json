@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "superadmin": "node scripts/bootstrap-superadmin.mjs",
     "smoke": "node scripts/smoke-routes.mjs",
     "start": "next start",
     "lint": "next lint"

@@ -39,6 +39,8 @@ export default function RootLayout({
         <link rel="manifest" href="/manifest.json" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <link rel="icon" href="/logo.jpeg" />
+        <link rel="apple-touch-icon" href="/logo.jpeg" />
       </head>
       <body className={`${geist.className} bg-white text-black min-h-screen selection:bg-ios-blue selection:text-white`}>
         <AuthProvider>

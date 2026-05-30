@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import type { User } from "@supabase/supabase-js";
-import { DEMO_USER_ID, ensureUserProfile } from "@/lib/database";
+import { DEMO_USER_ID, ensureUserProfile, getUserAccessState } from "@/lib/database";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
 type AuthContextValue = {
@@ -25,6 +25,8 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const DEMO_SESSION_KEY = "me-pague:demo-session";
 const DEMO_USERNAME = "admlaio";
 const DEMO_PASSWORD = "123456";
+const SUPERADMIN_USERNAME = "superadm";
+const SUPERADMIN_EMAIL = process.env.NEXT_PUBLIC_SUPERADMIN_EMAIL || "superadm@mepague.app";
 
 function createDemoUser(): User {
   return {
@@ -57,6 +59,16 @@ function setStoredDemoSession(enabled: boolean) {
   } catch {
     // Some embedded browsers disable localStorage; the in-memory user state still works.
   }
+}
+
+function resolveAuthEmail(value: string) {
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === SUPERADMIN_USERNAME) {
+    return SUPERADMIN_EMAIL;
+  }
+
+  return value.trim();
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -94,10 +106,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         window.clearTimeout(authTimeout);
         const sessionUser = data.session?.user ?? null;
-        setUser(sessionUser);
 
         if (sessionUser) {
-          await ensureUserProfile(sessionUser);
+          const access = await getUserAccessState(sessionUser);
+
+          if (access.allowed) {
+            setUser(sessionUser);
+          } else {
+            await supabase.auth.signOut();
+            setUser(null);
+          }
+        } else {
+          setUser(null);
         }
 
         setLoading(false);
@@ -110,10 +130,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setUser(session?.user ?? null);
-
       if (session?.user) {
-        await ensureUserProfile(session.user);
+        const access = await getUserAccessState(session.user);
+
+        if (access.allowed) {
+          setUser(session.user);
+        } else {
+          await supabase.auth.signOut();
+          setUser(null);
+        }
+      } else {
+        setUser(null);
       }
 
       setLoading(false);
@@ -141,11 +168,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error("Supabase is not configured");
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email: resolveAuthEmail(email), password });
 
     if (error) throw error;
     if (data.user) {
-      await ensureUserProfile(data.user);
+      const access = await getUserAccessState(data.user);
+
+      if (!access.allowed) {
+        await supabase.auth.signOut();
+        setUser(null);
+        throw new Error(access.message || "Conta sem acesso ao app.");
+      }
+
       setUser(data.user);
     }
   }, []);
@@ -164,10 +198,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     if (error) throw error;
-    if (data.session && data.user) {
+
+    if (data.user) {
       await ensureUserProfile(data.user);
-      setUser(data.user);
     }
+
+    if (data.session) {
+      await supabase.auth.signOut();
+    }
+
+    setUser(null);
   }, []);
 
   const logout = useCallback(async () => {

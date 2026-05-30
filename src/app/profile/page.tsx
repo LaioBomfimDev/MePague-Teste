@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Bell, ChevronRight, CreditCard, Fingerprint, LogOut, Save, Shield } from "lucide-react";
 import MobileHeader from "@/components/MobileHeader";
 import { SkeletonListItem } from "@/components/Skeleton";
@@ -12,6 +13,7 @@ import { updateUserProfile } from "@/lib/database";
 export default function ProfilePage() {
   const { logout, user } = useAuth();
   const { loading, profile } = useAppData();
+  const router = useRouter();
   const [name, setName] = useState("");
   const [pixKey, setPixKey] = useState("");
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -41,6 +43,9 @@ export default function ProfilePage() {
   }, []);
 
   const sections = [
+    ...(profile?.role === "superadmin"
+      ? [{ title: "Painel Superadm", icon: Shield, color: "text-green-600", bg: "bg-green-50" }]
+      : []),
     { title: "Minhas Chaves Pix", icon: CreditCard, color: "text-blue-500", bg: "bg-blue-50" },
     { title: "Seguranca & Biometria", icon: Shield, color: "text-purple-500", bg: "bg-purple-50" },
   ];
@@ -78,6 +83,11 @@ export default function ProfilePage() {
   }
 
   function handleProfileShortcut(title: string) {
+    if (title === "Painel Superadm") {
+      router.push("/admin");
+      return;
+    }
+
     if (title === "Minhas Chaves Pix") {
       pixInputRef.current?.focus();
       pixInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });

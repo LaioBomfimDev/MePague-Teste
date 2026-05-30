@@ -45,6 +45,10 @@ body {
     @apply transition-all duration-150 active:scale-[0.98] active:opacity-90;
   }
 
+  .admin-action {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition-all duration-150 active:scale-[0.98] disabled:pointer-events-none;
+  }
+
   .skeleton {
     @apply bg-gray-100 animate-pulse;
   }

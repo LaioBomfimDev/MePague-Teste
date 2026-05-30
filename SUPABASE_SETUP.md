@@ -23,6 +23,7 @@ O script cria:
 - `debts`
 - `payments`
 - `charge_logs`
+- `audit_logs`
 - politicas de Row Level Security
 - trigger para criar perfil automaticamente no cadastro
 - publicacao Realtime das tabelas usadas pelo app
@@ -38,6 +39,7 @@ Crie um arquivo `.env.local` na pasta `web`:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sua-chave-publicavel
+NEXT_PUBLIC_SUPERADMIN_EMAIL=superadm@mepague.app
 ```
 
 Ou, usando chave legada:
@@ -45,9 +47,20 @@ Ou, usando chave legada:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-chave-anon-public
+NEXT_PUBLIC_SUPERADMIN_EMAIL=superadm@mepague.app
 ```
 
 Nunca coloque `service_role` no frontend.
+
+Para usar o painel `/admin`, adicione tambem no `.env.local` local ou nas variaveis privadas do servidor:
+
+```bash
+SUPABASE_SERVICE_ROLE_KEY=sua-chave-service-role
+SUPERADMIN_EMAIL=superadm@mepague.app
+SUPERADMIN_PASSWORD=654321
+```
+
+`SUPABASE_SERVICE_ROLE_KEY` nunca deve ter prefixo `NEXT_PUBLIC_`.
 
 ## 4. Configurar login para teste local
 
@@ -59,7 +72,19 @@ Para validar rapido:
 
 Se deixar confirmacao de email ligada, o usuario precisa clicar no email antes de entrar.
 
-## 5. Rodar localmente
+## 5. Criar o superadm
+
+1. Rode todo o `supabase-schema.sql` no SQL Editor.
+2. Garanta que `SUPABASE_SERVICE_ROLE_KEY` esta no `.env.local`.
+3. Rode:
+
+```bash
+npm run superadmin
+```
+
+Depois entre no app com login `superadm` e senha `654321`.
+
+## 6. Rodar localmente
 
 ```bash
 npm run dev
@@ -72,7 +97,12 @@ Abra http://localhost:3000, crie uma conta, cadastre uma divida e confira:
 - Table Editor > `debts`: deve aparecer a divida cadastrada.
 - Table Editor > `payments`: deve aparecer quando voce registrar um pagamento.
 - Table Editor > `charge_logs`: deve aparecer quando voce copiar ou enviar uma cobranca.
+- Table Editor > `audit_logs`: deve aparecer quando houver criacoes, edicoes e acoes administrativas.
 
-## 6. Validar seguranca basica
+## 7. Validar seguranca basica
 
 No Table Editor, cada linha deve ter `user_id` igual ao usuario autenticado. As politicas RLS em `supabase-schema.sql` fazem com que cada pessoa leia e altere apenas os proprios dados.
+
+Novos cadastros entram como `pending`. O superadm deve aprovar, inativar, bloquear, excluir logicamente, trocar plano/perfil, resetar senha e registrar notas internas em `/admin`.
+
+O painel administrativo nao consulta `debts`, `payments` ou valores financeiros dos usuarios. A visao de risco e baseada em acesso, status, perfil, confirmacao de email e acoes sensiveis registradas em auditoria.
