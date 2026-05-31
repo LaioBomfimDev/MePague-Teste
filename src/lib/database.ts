@@ -368,14 +368,17 @@ function createDemoDebtWithCustomer(input: {
 }
 
 function mapProfile(row: ProfileRow): UserProfile {
+  const role = row.role || "user";
+  const status = row.status === "pending" && role === "user" ? "active" : row.status || "active";
+
   return {
     id: row.id,
     name: row.name,
     email: row.email,
     pixKey: row.pix_key,
     plan: row.plan,
-    role: row.role || "user",
-    status: row.status || "active",
+    role,
+    status,
     adminNotes: row.admin_notes || "",
     statusReason: row.status_reason || "",
     statusChangedAt: row.status_changed_at,
@@ -684,7 +687,7 @@ export async function getUserAccessState(user: User): Promise<{
   if (profile.status === "pending") {
     return {
       allowed: false,
-      message: "Sua conta esta aguardando revisao. Fale com o suporte.",
+      message: "Conta administrativa pendente. Fale com o suporte.",
       profile,
     };
   }

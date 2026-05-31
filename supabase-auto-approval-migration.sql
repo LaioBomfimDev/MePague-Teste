@@ -22,6 +22,15 @@ begin
 end;
 $$;
 
+drop trigger if exists on_auth_user_created on auth.users;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+
+alter table public.profiles
+  alter column status set default 'active';
+
 create or replace function public.protect_profile_admin_fields()
 returns trigger
 language plpgsql

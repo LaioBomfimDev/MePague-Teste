@@ -9,8 +9,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { User } from "@supabase/supabase-js";
-import { DEMO_USER_ID, ensureUserProfile, getUserAccessState } from "@/lib/database";
+import type { Session, User } from "@supabase/supabase-js";
+import { DEMO_USER_ID, getUserAccessState } from "@/lib/database";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
 type AuthContextValue = {
@@ -31,6 +31,7 @@ const DEMO_PASSWORD = "123456";
 const SUPERADMIN_USERNAME = "superadm";
 const SUPERADMIN_EMAIL = process.env.NEXT_PUBLIC_SUPERADMIN_EMAIL || "superadm@mepague.app";
 const AUTH_TIMEOUT_MS = 5000;
+type UserAccessState = Awaited<ReturnType<typeof getUserAccessState>>;
 
 function createDemoUser(): User {
   return {
@@ -86,6 +87,26 @@ function getAuthNoticeTone(profileStatus?: string) {
   return profileStatus === "pending" ? "info" : "error";
 }
 
+async function getSessionAccessState(session: Session): Promise<UserAccessState> {
+  try {
+    const response = await fetch("/api/auth/profile", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${session.access_token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(body?.error || "Nao foi possivel validar o acesso.");
+    }
+
+    return (await response.json()) as UserAccessState;
+  } catch {
+    return getUserAccessState(session.user);
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [authNotice, setAuthNotice] = useState<AuthContextValue["authNotice"]>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -118,23 +139,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const authTimeout = window.setTimeout(finishLoading, AUTH_TIMEOUT_MS);
 
-    const applySessionUser = async (sessionUser: User | null) => {
+    const applySession = async (session: Session | null) => {
       const currentValidation = ++validationId;
 
-      if (!sessionUser) {
+      if (!session) {
         setUser(null);
         finishLoading();
         return;
       }
 
       try {
-        const access = await getUserAccessState(sessionUser);
+        const access = await getSessionAccessState(session);
 
         if (!mounted || currentValidation !== validationId) return;
 
         if (access.allowed) {
           setAuthNotice(null);
-          setUser(sessionUser);
+          setUser(session.user);
         } else {
           await supabase.auth.signOut();
           setAuthNotice({
@@ -157,12 +178,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "INITIAL_SESSION") return;
 
-      void applySessionUser(session?.user ?? null);
+      void applySession(session ?? null);
     });
 
     void supabase.auth
       .getSession()
-      .then(({ data }) => applySessionUser(data.session?.user ?? null))
+      .then(({ data }) => applySession(data.session ?? null))
       .catch(finishLoading);
 
     return () => {
@@ -192,6 +213,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase.auth.signInWithPassword({ email: resolveAuthEmail(email), password });
 
     if (error) throw error;
+    if (data.session) {
+      const access = await getSessionAccessState(data.session);
+
+      if (!access.allowed) {
+        await supabase.auth.signOut();
+        setUser(null);
+        throw new Error(access.message || "Conta sem acesso ao app.");
+      }
+
+      setUser(data.session.user);
+      return;
+    }
+
     if (data.user) {
       const access = await getUserAccessState(data.user);
 
@@ -248,8 +282,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     if (data.user && data.session) {
-      await ensureUserProfile(data.user);
-      setUser(data.user);
+      const access = await getSessionAccessState(data.session);
+
+      if (!access.allowed) {
+        await supabase.auth.signOut();
+        setUser(null);
+        throw new Error(access.message || "Conta sem acesso ao app.");
+      }
+
+      setUser(data.session.user);
       return { signedIn: true };
     }
 
