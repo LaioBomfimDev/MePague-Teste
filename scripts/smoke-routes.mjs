@@ -1,5 +1,16 @@
 const baseUrl = process.env.SMOKE_BASE_URL || "http://127.0.0.1:3000";
-const requiredRoutes = ["/", "/login", "/debtors", "/new-debt", "/profile", "/reports", "/admin", "/manifest.json", "/favicon.ico"];
+const requiredRoutes = [
+  "/",
+  "/login",
+  "/debtors",
+  "/new-debt",
+  "/profile",
+  "/reports",
+  "/admin",
+  "/manifest.json",
+  "/sw.js",
+  "/favicon.ico",
+];
 const timeoutMs = Number(process.env.SMOKE_TIMEOUT_MS || 10000);
 
 function resolveUrl(path) {

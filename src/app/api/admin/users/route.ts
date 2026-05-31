@@ -113,7 +113,7 @@ function calculateRisk(input: {
 
   if (status === "pending") {
     score += 30;
-    tags.push("Aguardando aprovacao");
+    tags.push("Aguardando revisao");
   }
 
   if (status === "blocked") {

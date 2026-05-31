@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
+import ThemeSelector from "@/components/ThemeSelector";
 
 type MobileHeaderProps = {
   action?: ReactNode;
@@ -51,7 +52,10 @@ export default function MobileHeader({
           {subtitle && <p className="text-xs text-gray-400 mt-0.5 truncate">{subtitle}</p>}
         </div>
 
-        <div className="w-10 shrink-0 flex items-center justify-end">{action}</div>
+        <div className="shrink-0 flex items-center justify-end gap-2">
+          {action}
+          <ThemeSelector />
+        </div>
       </div>
     </header>
   );

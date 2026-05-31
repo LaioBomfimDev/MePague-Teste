@@ -12,6 +12,14 @@ type DemoStore = {
   chargeLogs: ChargeLog[];
 };
 
+export type AppDataSnapshot = {
+  profile: UserProfile | null;
+  customers: Customer[];
+  debts: Debt[];
+  payments: Payment[];
+  chargeLogs: ChargeLog[];
+};
+
 export const DEMO_USER_ID = "demo-admlaio";
 
 const DEMO_STORAGE_KEY = "me-pague:demo-store";
@@ -207,6 +215,16 @@ function createDefaultDemoStore(): DemoStore {
   };
 }
 
+function mapDemoStoreToSnapshot(store: DemoStore): AppDataSnapshot {
+  return {
+    profile: store.profile,
+    customers: store.customers,
+    debts: store.debts,
+    payments: store.payments || [],
+    chargeLogs: store.chargeLogs || [],
+  };
+}
+
 function getDemoStore(): DemoStore {
   if (!canUseStorage()) return createDefaultDemoStore();
 
@@ -283,6 +301,14 @@ function createLocalId(prefix: string) {
 
 function createRealtimeChannelName(prefix: string, ...parts: string[]) {
   return [prefix, ...parts, createLocalId("sub")].join(":");
+}
+
+function getUserDisplayName(user: User) {
+  const metadataName = user.user_metadata?.name || user.user_metadata?.full_name;
+
+  return typeof metadataName === "string" && metadataName.trim()
+    ? metadataName.trim()
+    : user.email?.split("@")[0] || "Meu Perfil";
 }
 
 function createDemoDebtWithCustomer(input: {
@@ -519,18 +545,105 @@ async function fetchChargeLogs(uid: string) {
   return ((data || []) as ChargeLogRow[]).map(mapChargeLog);
 }
 
+export async function loadAppData(uid: string): Promise<AppDataSnapshot> {
+  if (isDemoUid(uid)) {
+    return mapDemoStoreToSnapshot(getDemoStore());
+  }
+
+  const [profile, customers, debts, payments, chargeLogs] = await Promise.all([
+    fetchUserProfile(uid),
+    fetchCustomers(uid),
+    fetchDebts(uid),
+    fetchPayments(uid),
+    fetchChargeLogs(uid),
+  ]);
+
+  return {
+    profile,
+    customers,
+    debts,
+    payments,
+    chargeLogs,
+  };
+}
+
+export function subscribeAppData(
+  uid: string,
+  callback: (snapshot: AppDataSnapshot) => void,
+  onError?: (error: unknown) => void,
+): Unsubscribe {
+  if (isDemoUid(uid)) {
+    return subscribeDemoStore(callback, mapDemoStoreToSnapshot);
+  }
+
+  let disposed = false;
+  let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const load = async () => {
+    try {
+      const snapshot = await loadAppData(uid);
+
+      if (!disposed) {
+        callback(snapshot);
+      }
+    } catch (error) {
+      if (!disposed) {
+        onError?.(error);
+      }
+    }
+  };
+
+  const scheduleRefresh = () => {
+    if (disposed) return;
+
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+    }
+
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      void load();
+    }, 150);
+  };
+
+  void load();
+
+  const channel = supabase
+    .channel(createRealtimeChannelName("app-data", uid))
+    .on("postgres_changes", { event: "*", schema: "public", table: "profiles", filter: `id=eq.${uid}` }, scheduleRefresh)
+    .on("postgres_changes", { event: "*", schema: "public", table: "customers", filter: `user_id=eq.${uid}` }, scheduleRefresh)
+    .on("postgres_changes", { event: "*", schema: "public", table: "debts", filter: `user_id=eq.${uid}` }, scheduleRefresh)
+    .on("postgres_changes", { event: "*", schema: "public", table: "payments", filter: `user_id=eq.${uid}` }, scheduleRefresh)
+    .on("postgres_changes", { event: "*", schema: "public", table: "charge_logs", filter: `user_id=eq.${uid}` }, scheduleRefresh)
+    .subscribe((status) => {
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        onError?.(new Error(`Realtime ${status.toLowerCase()}`));
+      }
+    });
+
+  return () => {
+    disposed = true;
+
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+    }
+
+    void supabase.removeChannel(channel);
+  };
+}
+
 export async function ensureUserProfile(user: User) {
   if (isDemoUid(user.id)) return;
 
   const { error } = await supabase.from("profiles").upsert(
     {
       id: user.id,
-      name: user.user_metadata?.name || user.email?.split("@")[0] || "Meu Perfil",
+      name: getUserDisplayName(user),
       email: user.email || "",
       pix_key: "",
       plan: "free",
       role: "user",
-      status: "pending",
+      status: "active",
       updated_at: new Date().toISOString(),
     },
     { onConflict: "id", ignoreDuplicates: true },
@@ -563,7 +676,7 @@ export async function getUserAccessState(user: User): Promise<{
   if (profile.status === "blocked") {
     return {
       allowed: false,
-      message: "Sua conta esta bloqueada. Fale com o superadm.",
+      message: "Sua conta esta bloqueada. Fale com o suporte.",
       profile,
     };
   }
@@ -571,7 +684,7 @@ export async function getUserAccessState(user: User): Promise<{
   if (profile.status === "pending") {
     return {
       allowed: false,
-      message: "Cadastro recebido. Aguarde a aprovacao do superadm para entrar.",
+      message: "Sua conta esta aguardando revisao. Fale com o suporte.",
       profile,
     };
   }

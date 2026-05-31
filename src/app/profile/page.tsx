@@ -8,16 +8,16 @@ import { SkeletonListItem } from "@/components/Skeleton";
 import Toast from "@/components/Toast";
 import { useAuth } from "@/components/AuthProvider";
 import { useAppData } from "@/hooks/useAppData";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { updateUserProfile } from "@/lib/database";
 
 export default function ProfilePage() {
   const { logout, user } = useAuth();
   const { loading, profile } = useAppData();
+  const notifications = usePushNotifications();
   const router = useRouter();
   const [name, setName] = useState("");
   const [pixKey, setPixKey] = useState("");
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [reminderWindow, setReminderWindow] = useState(1);
   const [notice, setNotice] = useState("");
   const [noticeTone, setNoticeTone] = useState<"success" | "info" | "error">("success");
   const [savedPulse, setSavedPulse] = useState(false);
@@ -28,19 +28,6 @@ export default function ProfilePage() {
     setName(profile?.name || "");
     setPixKey(profile?.pixKey || "");
   }, [profile]);
-
-  useEffect(() => {
-    const savedEnabled = window.localStorage.getItem("me-pague:notifications-enabled");
-    const savedWindow = window.localStorage.getItem("me-pague:reminder-window");
-
-    if (savedEnabled) {
-      setNotificationsEnabled(savedEnabled === "true");
-    }
-
-    if (savedWindow) {
-      setReminderWindow(Number(savedWindow));
-    }
-  }, []);
 
   const sections = [
     ...(profile?.role === "superadmin"
@@ -72,14 +59,26 @@ export default function ProfilePage() {
     }
   }
 
-  function handleNotificationsChange(enabled: boolean) {
-    setNotificationsEnabled(enabled);
-    window.localStorage.setItem("me-pague:notifications-enabled", String(enabled));
-  }
+  async function handleNotificationsChange(enabled: boolean) {
+    setNotice("");
 
-  function handleReminderWindowChange(value: number) {
-    setReminderWindow(value);
-    window.localStorage.setItem("me-pague:reminder-window", String(value));
+    try {
+      if (enabled) {
+        await notifications.enable();
+        setNoticeTone("success");
+        setNotice("Notificacoes ativadas para as 8h.");
+      } else {
+        await notifications.disable();
+        setNoticeTone("info");
+        setNotice("Notificacoes desativadas.");
+      }
+
+      window.setTimeout(() => setNotice(""), 2400);
+    } catch (error) {
+      setNoticeTone("error");
+      setNotice(error instanceof Error ? error.message : "Nao foi possivel alterar notificacoes.");
+      window.setTimeout(() => setNotice(""), 3000);
+    }
   }
 
   function handleProfileShortcut(title: string) {
@@ -189,40 +188,26 @@ export default function ProfilePage() {
                   <Bell size={18} strokeWidth={1.8} />
                 </div>
                 <div>
-                  <p className="font-medium text-sm text-gray-900">Lembretes de cobranca</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Destaca vencimentos no inicio do app.</p>
+                  <p className="font-medium text-sm text-gray-900">Notificacoes as 8h</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{getNotificationStatusLabel(notifications)}</p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => handleNotificationsChange(!notificationsEnabled)}
-                className={`w-11 h-6 rounded-full relative transition-colors ${notificationsEnabled ? "bg-green-500" : "bg-gray-200"}`}
-                aria-pressed={notificationsEnabled}
+                onClick={() => handleNotificationsChange(!notifications.dailyRemindersEnabled)}
+                disabled={isNotificationToggleDisabled(notifications)}
+                className={`w-11 h-6 rounded-full relative transition-colors disabled:opacity-50 ${
+                  notifications.dailyRemindersEnabled ? "bg-green-500" : "bg-gray-200"
+                }`}
+                aria-pressed={notifications.dailyRemindersEnabled}
               >
                 <span
-                  className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform ${notificationsEnabled ? "translate-x-5" : "translate-x-0.5"}`}
+                  className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                    notifications.dailyRemindersEnabled ? "translate-x-5" : "translate-x-0.5"
+                  }`}
                   style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }}
                 />
               </button>
-            </div>
-
-            <div className={notificationsEnabled ? "space-y-3" : "space-y-3 opacity-50"}>
-              <div className="flex justify-between items-center">
-                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">Avisar antes</label>
-                <span className="text-sm font-semibold text-gray-900">
-                  {reminderWindow} dia{reminderWindow === 1 ? "" : "s"}
-                </span>
-              </div>
-              <input
-                value={reminderWindow}
-                onChange={(event) => handleReminderWindowChange(Number(event.target.value))}
-                disabled={!notificationsEnabled}
-                type="range"
-                min="0"
-                max="7"
-                step="1"
-                className="w-full accent-gray-900 disabled:opacity-50"
-              />
             </div>
           </div>
 
@@ -252,4 +237,21 @@ export default function ProfilePage() {
       )}
     </div>
   );
+}
+
+function getNotificationStatusLabel(notifications: ReturnType<typeof usePushNotifications>) {
+  if (notifications.isDemoUser) return "Disponivel para contas reais.";
+  if (!notifications.supported) return "Seu navegador ainda nao suporta Web Push.";
+  if (notifications.permission === "denied") return "Permissao bloqueada no navegador.";
+  if (notifications.dailyRemindersEnabled) return "Ativo para recebimentos que vencem amanha.";
+  if (notifications.saving) return "Atualizando preferencia...";
+
+  return "Avisa quando houver recebimento para amanha.";
+}
+
+function isNotificationToggleDisabled(notifications: ReturnType<typeof usePushNotifications>) {
+  if (notifications.loading || notifications.saving || notifications.isDemoUser) return true;
+  if (notifications.dailyRemindersEnabled) return false;
+
+  return !notifications.supported || notifications.permission === "denied";
 }

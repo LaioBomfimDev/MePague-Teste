@@ -92,6 +92,40 @@ create table if not exists public.charge_logs (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.notification_preferences (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  daily_reminders_enabled boolean not null default false,
+  reminder_days_before integer not null default 1 check (reminder_days_before = 1),
+  timezone text not null default 'America/Sao_Paulo',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  endpoint text not null unique,
+  subscription jsonb not null,
+  user_agent text not null default '',
+  is_active boolean not null default true,
+  last_seen_at timestamptz,
+  failed_at timestamptz,
+  failure_reason text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.notification_deliveries (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  rule text not null,
+  target_date date not null,
+  payload jsonb not null default '{}'::jsonb,
+  sent_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  unique (user_id, rule, target_date)
+);
+
 create table if not exists public.audit_logs (
   id uuid primary key default gen_random_uuid(),
   actor_id uuid references auth.users(id) on delete set null,
@@ -113,6 +147,9 @@ create index if not exists payments_user_id_paid_at_idx on public.payments(user_
 create index if not exists payments_user_id_debt_id_idx on public.payments(user_id, debt_id);
 create index if not exists charge_logs_user_id_created_at_idx on public.charge_logs(user_id, created_at desc);
 create index if not exists charge_logs_user_id_customer_id_idx on public.charge_logs(user_id, customer_id);
+create index if not exists notification_preferences_enabled_idx on public.notification_preferences(daily_reminders_enabled, reminder_days_before);
+create index if not exists push_subscriptions_user_id_active_idx on public.push_subscriptions(user_id, is_active);
+create index if not exists notification_deliveries_user_id_sent_at_idx on public.notification_deliveries(user_id, sent_at desc);
 create index if not exists profiles_status_created_at_idx on public.profiles(status, created_at desc);
 create index if not exists profiles_role_status_idx on public.profiles(role, status);
 create index if not exists audit_logs_created_at_idx on public.audit_logs(created_at desc);
@@ -132,7 +169,7 @@ begin
     coalesce(new.raw_user_meta_data->>'name', split_part(new.email, '@', 1), 'Meu Perfil'),
     coalesce(new.email, ''),
     'user',
-    'pending'
+    'active'
   )
   on conflict (id) do nothing;
 
@@ -229,7 +266,7 @@ begin
   if tg_op = 'INSERT' and auth.uid() = new.id then
     new.plan := 'free';
     new.role := 'user';
-    new.status := 'pending';
+    new.status := 'active';
     new.admin_notes := '';
     new.status_reason := '';
     new.status_changed_at := null;
@@ -258,6 +295,9 @@ alter table public.customers enable row level security;
 alter table public.debts enable row level security;
 alter table public.payments enable row level security;
 alter table public.charge_logs enable row level security;
+alter table public.notification_preferences enable row level security;
+alter table public.push_subscriptions enable row level security;
+alter table public.notification_deliveries enable row level security;
 alter table public.audit_logs enable row level security;
 
 drop policy if exists "Users can read own profile" on public.profiles;
@@ -279,6 +319,15 @@ drop policy if exists "Users can delete own payments" on public.payments;
 drop policy if exists "Users can read own charge logs" on public.charge_logs;
 drop policy if exists "Users can insert own charge logs" on public.charge_logs;
 drop policy if exists "Users can delete own charge logs" on public.charge_logs;
+drop policy if exists "Users can read own notification preferences" on public.notification_preferences;
+drop policy if exists "Users can insert own notification preferences" on public.notification_preferences;
+drop policy if exists "Users can update own notification preferences" on public.notification_preferences;
+drop policy if exists "Users can delete own notification preferences" on public.notification_preferences;
+drop policy if exists "Users can read own push subscriptions" on public.push_subscriptions;
+drop policy if exists "Users can insert own push subscriptions" on public.push_subscriptions;
+drop policy if exists "Users can update own push subscriptions" on public.push_subscriptions;
+drop policy if exists "Users can delete own push subscriptions" on public.push_subscriptions;
+drop policy if exists "Users can read own notification deliveries" on public.notification_deliveries;
 drop policy if exists "Superadmins can read audit logs" on public.audit_logs;
 
 create policy "Users can read own profile"
@@ -291,7 +340,7 @@ create policy "Superadmins can read all profiles"
 
 create policy "Users can insert own profile"
   on public.profiles for insert
-  with check (auth.uid() = id and plan = 'free' and role = 'user' and status = 'pending');
+  with check (auth.uid() = id and plan = 'free' and role = 'user' and status = 'active');
 
 create policy "Users can update own profile"
   on public.profiles for update
@@ -361,6 +410,44 @@ create policy "Users can delete own charge logs"
   on public.charge_logs for delete
   using (auth.uid() = user_id);
 
+create policy "Users can read own notification preferences"
+  on public.notification_preferences for select
+  using (auth.uid() = user_id);
+
+create policy "Users can insert own notification preferences"
+  on public.notification_preferences for insert
+  with check (auth.uid() = user_id);
+
+create policy "Users can update own notification preferences"
+  on public.notification_preferences for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "Users can delete own notification preferences"
+  on public.notification_preferences for delete
+  using (auth.uid() = user_id);
+
+create policy "Users can read own push subscriptions"
+  on public.push_subscriptions for select
+  using (auth.uid() = user_id);
+
+create policy "Users can insert own push subscriptions"
+  on public.push_subscriptions for insert
+  with check (auth.uid() = user_id);
+
+create policy "Users can update own push subscriptions"
+  on public.push_subscriptions for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "Users can delete own push subscriptions"
+  on public.push_subscriptions for delete
+  using (auth.uid() = user_id);
+
+create policy "Users can read own notification deliveries"
+  on public.notification_deliveries for select
+  using (auth.uid() = user_id);
+
 create policy "Superadmins can read audit logs"
   on public.audit_logs for select
   using (public.is_superadmin());
@@ -371,6 +458,9 @@ drop trigger if exists audit_customers_changes on public.customers;
 drop trigger if exists audit_debts_changes on public.debts;
 drop trigger if exists audit_payments_changes on public.payments;
 drop trigger if exists audit_charge_logs_changes on public.charge_logs;
+drop trigger if exists audit_notification_preferences_changes on public.notification_preferences;
+drop trigger if exists audit_push_subscriptions_changes on public.push_subscriptions;
+drop trigger if exists audit_notification_deliveries_changes on public.notification_deliveries;
 
 create trigger protect_profile_admin_fields
   before insert or update on public.profiles
@@ -394,6 +484,18 @@ create trigger audit_payments_changes
 
 create trigger audit_charge_logs_changes
   after insert or update or delete on public.charge_logs
+  for each row execute procedure public.audit_row_change();
+
+create trigger audit_notification_preferences_changes
+  after insert or update or delete on public.notification_preferences
+  for each row execute procedure public.audit_row_change();
+
+create trigger audit_push_subscriptions_changes
+  after insert or update or delete on public.push_subscriptions
+  for each row execute procedure public.audit_row_change();
+
+create trigger audit_notification_deliveries_changes
+  after insert or update or delete on public.notification_deliveries
   for each row execute procedure public.audit_row_change();
 
 do $$
@@ -431,6 +533,20 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'charge_logs'
   ) then
     alter publication supabase_realtime add table public.charge_logs;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'notification_preferences'
+  ) then
+    alter publication supabase_realtime add table public.notification_preferences;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'push_subscriptions'
+  ) then
+    alter publication supabase_realtime add table public.push_subscriptions;
   end if;
 
   if not exists (

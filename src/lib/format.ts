@@ -185,7 +185,7 @@ export function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
-export function buildChargeMessage(input: {
+export type ChargeMessageInput = {
   debtorName: string;
   amount: number;
   pixKey?: string;
@@ -194,7 +194,18 @@ export function buildChargeMessage(input: {
   daysOverdue?: number;
   debtsCount?: number;
   description?: string;
-}) {
+};
+
+export type ChargeMessageParts = {
+  amount: string;
+  delay: string;
+  detail: string;
+  due: string;
+  firstName: string;
+  pix: string;
+};
+
+export function getChargeMessageParts(input: ChargeMessageInput): ChargeMessageParts {
   const firstName = input.debtorName.split(" ").filter(Boolean)[0] || input.debtorName;
   const amount = formatCurrency(input.amount);
   const pix = input.pixKey ? ` Minha chave Pix: ${input.pixKey}.` : "";
@@ -203,21 +214,32 @@ export function buildChargeMessage(input: {
     input.debtsCount && input.debtsCount > 1
       ? ` referente a ${input.debtsCount} cobrancas em aberto`
       : description;
+  const due = input.dueDate ? ` com vencimento em ${formatDate(input.dueDate)}` : "";
+  const delay =
+    input.daysOverdue && input.daysOverdue > 0
+      ? `ja esta com ${input.daysOverdue} dia${input.daysOverdue === 1 ? "" : "s"} de atraso`
+      : "vence hoje";
+
+  return {
+    amount,
+    delay,
+    detail: count,
+    due,
+    firstName,
+    pix,
+  };
+}
+
+export function buildChargeMessage(input: ChargeMessageInput) {
+  const { amount, delay, detail, due, firstName, pix } = getChargeMessageParts(input);
 
   if (input.tone === "firm") {
-    return `Oi, ${firstName}. Estou passando para regularizar o valor em aberto de ${amount}${count}. Por favor, me envie uma previsao de pagamento hoje.${pix}`;
+    return `Oi, ${firstName}. Estou passando para regularizar o valor em aberto de ${amount}${detail}. Por favor, me envie uma previsao de pagamento hoje.${pix}`;
   }
 
   if (input.tone === "overdue") {
-    const atraso =
-      input.daysOverdue && input.daysOverdue > 0
-        ? ` ja esta com ${input.daysOverdue} dia${input.daysOverdue === 1 ? "" : "s"} de atraso`
-        : "vence hoje";
-
-    return `Oi, ${firstName}. O pagamento de ${amount}${count} ${atraso}. Consegue fazer o Pix ou me passar uma previsao?${pix}`;
+    return `Oi, ${firstName}. O pagamento de ${amount}${detail} ${delay}. Consegue fazer o Pix ou me passar uma previsao?${pix}`;
   }
 
-  const due = input.dueDate ? ` com vencimento em ${formatDate(input.dueDate)}` : "";
-
-  return `Oi, ${firstName}. Tudo bem? Passando para lembrar do valor em aberto de ${amount}${count}${due}. Quando puder, me chama para combinarmos o pagamento.${pix}`;
+  return `Oi, ${firstName}. Tudo bem? Passando para lembrar do valor em aberto de ${amount}${detail}${due}. Quando puder, me chama para combinarmos o pagamento.${pix}`;
 }

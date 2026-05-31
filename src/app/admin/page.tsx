@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   Archive,
   Ban,
@@ -1066,11 +1066,25 @@ export default function AdminPage() {
 }
 
 function AdminModal({ children, onClose, title }: { children: ReactNode; onClose: () => void; title: string }) {
+  const titleId = useId();
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-[130] flex items-end justify-center bg-black/40 p-3 sm:items-center">
-      <div className="w-full max-w-lg rounded-[18px] bg-white p-4 shadow-2xl">
+    <div className="app-modal z-[130]">
+      <button type="button" aria-label="Fechar modal" className="app-modal__backdrop" onClick={onClose} />
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="app-modal__panel relative w-full max-w-lg rounded-[18px] bg-white p-4 shadow-2xl">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-lg font-bold text-gray-950">{title}</h2>
+          <h2 id={titleId} className="text-lg font-bold text-gray-950">{title}</h2>
           <button type="button" onClick={onClose} className="rounded-xl bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-600 btn-press">
             Fechar
           </button>

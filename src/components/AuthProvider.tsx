@@ -14,10 +14,13 @@ import { DEMO_USER_ID, ensureUserProfile, getUserAccessState } from "@/lib/datab
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
 type AuthContextValue = {
+  authNotice: { message: string; tone: "error" | "info" | "success" } | null;
+  clearAuthNotice: () => void;
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<{ signedIn: boolean }>;
   logout: () => Promise<void>;
 };
 
@@ -27,6 +30,7 @@ const DEMO_USERNAME = "admlaio";
 const DEMO_PASSWORD = "123456";
 const SUPERADMIN_USERNAME = "superadm";
 const SUPERADMIN_EMAIL = process.env.NEXT_PUBLIC_SUPERADMIN_EMAIL || "superadm@mepague.app";
+const AUTH_TIMEOUT_MS = 5000;
 
 function createDemoUser(): User {
   return {
@@ -71,12 +75,25 @@ function resolveAuthEmail(value: string) {
   return value.trim();
 }
 
+function createUserAlreadyExistsError() {
+  const error = new Error("Esse email ja tem cadastro. Entre pela aba Entrar.") as Error & { code: string };
+
+  error.code = "user_already_exists";
+  return error;
+}
+
+function getAuthNoticeTone(profileStatus?: string) {
+  return profileStatus === "pending" ? "info" : "error";
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [authNotice, setAuthNotice] = useState<AuthContextValue["authNotice"]>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
+    let validationId = 0;
 
     if (getStoredDemoSession()) {
       setUser(createDemoUser());
@@ -93,58 +110,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    const authTimeout = window.setTimeout(() => {
-      if (!mounted) return;
-
-      setLoading(false);
-    }, 3500);
-
-    supabase.auth
-      .getSession()
-      .then(async ({ data }) => {
-        if (!mounted) return;
-
-        window.clearTimeout(authTimeout);
-        const sessionUser = data.session?.user ?? null;
-
-        if (sessionUser) {
-          const access = await getUserAccessState(sessionUser);
-
-          if (access.allowed) {
-            setUser(sessionUser);
-          } else {
-            await supabase.auth.signOut();
-            setUser(null);
-          }
-        } else {
-          setUser(null);
-        }
-
+    const finishLoading = () => {
+      if (mounted) {
         setLoading(false);
-      })
-      .catch(() => {
-        if (!mounted) return;
+      }
+    };
 
-        window.clearTimeout(authTimeout);
-        setLoading(false);
-      });
+    const authTimeout = window.setTimeout(finishLoading, AUTH_TIMEOUT_MS);
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        const access = await getUserAccessState(session.user);
+    const applySessionUser = async (sessionUser: User | null) => {
+      const currentValidation = ++validationId;
 
-        if (access.allowed) {
-          setUser(session.user);
-        } else {
-          await supabase.auth.signOut();
-          setUser(null);
-        }
-      } else {
+      if (!sessionUser) {
         setUser(null);
+        finishLoading();
+        return;
       }
 
-      setLoading(false);
+      try {
+        const access = await getUserAccessState(sessionUser);
+
+        if (!mounted || currentValidation !== validationId) return;
+
+        if (access.allowed) {
+          setAuthNotice(null);
+          setUser(sessionUser);
+        } else {
+          await supabase.auth.signOut();
+          setAuthNotice({
+            message: access.message || "Conta sem acesso ao app.",
+            tone: getAuthNoticeTone(access.profile?.status),
+          });
+          setUser(null);
+        }
+      } catch {
+        if (mounted && currentValidation === validationId) {
+          setUser(null);
+        }
+      } finally {
+        if (currentValidation === validationId) {
+          finishLoading();
+        }
+      }
+    };
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "INITIAL_SESSION") return;
+
+      void applySessionUser(session?.user ?? null);
     });
+
+    void supabase.auth
+      .getSession()
+      .then(({ data }) => applySessionUser(data.session?.user ?? null))
+      .catch(finishLoading);
 
     return () => {
       mounted = false;
@@ -168,6 +187,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error("Supabase is not configured");
     }
 
+    setAuthNotice(null);
+
     const { data, error } = await supabase.auth.signInWithPassword({ email: resolveAuthEmail(email), password });
 
     if (error) throw error;
@@ -184,10 +205,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const loginWithGoogle = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      throw new Error("Supabase is not configured");
+    }
+
+    setAuthNotice(null);
+
+    const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/login` : undefined;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo,
+        queryParams: {
+          prompt: "select_account",
+        },
+      },
+    });
+
+    if (error) throw error;
+  }, []);
+
   const register = useCallback(async (name: string, email: string, password: string) => {
     if (!isSupabaseConfigured) {
       throw new Error("Supabase is not configured");
     }
+
+    setAuthNotice(null);
 
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -199,15 +243,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (error) throw error;
 
-    if (data.user) {
-      await ensureUserProfile(data.user);
+    if (data.user?.identities?.length === 0) {
+      throw createUserAlreadyExistsError();
     }
 
-    if (data.session) {
-      await supabase.auth.signOut();
+    if (data.user && data.session) {
+      await ensureUserProfile(data.user);
+      setUser(data.user);
+      return { signedIn: true };
     }
 
     setUser(null);
+    return { signedIn: false };
+  }, []);
+
+  const clearAuthNotice = useCallback(() => {
+    setAuthNotice(null);
   }, []);
 
   const logout = useCallback(async () => {
@@ -229,8 +280,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   const value = useMemo(
-    () => ({ user, loading, login, register, logout }),
-    [loading, login, logout, register, user],
+    () => ({ authNotice, clearAuthNotice, user, loading, login, loginWithGoogle, register, logout }),
+    [authNotice, clearAuthNotice, loading, login, loginWithGoogle, logout, register, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

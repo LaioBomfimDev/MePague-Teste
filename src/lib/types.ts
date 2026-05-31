@@ -4,6 +4,7 @@ export type ChargeLogAction = "copied" | "sent";
 export type UserRole = "user" | "support" | "operations" | "admin" | "superadmin";
 export type UserStatus = "pending" | "active" | "inactive" | "blocked" | "deleted";
 export type RiskLevel = "low" | "medium" | "high";
+export type NotificationRule = "due_tomorrow";
 
 export type UserProfile = {
   id: string;
@@ -64,6 +65,39 @@ export type ChargeLog = {
   tone: MessageTone;
   message: string;
   createdAt: string;
+};
+
+export type NotificationPreference = {
+  userId: string;
+  dailyRemindersEnabled: boolean;
+  reminderDaysBefore: 1;
+  timezone: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type PushSubscriptionRecord = {
+  id: string;
+  userId: string;
+  endpoint: string;
+  subscription: Record<string, unknown>;
+  userAgent: string;
+  isActive: boolean;
+  lastSeenAt?: string | null;
+  failedAt?: string | null;
+  failureReason: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type NotificationDelivery = {
+  id: string;
+  userId: string;
+  rule: NotificationRule;
+  targetDate: string;
+  payload: Record<string, unknown>;
+  sentAt: string;
+  createdAt?: string;
 };
 
 export type DebtWithCustomer = Debt & {

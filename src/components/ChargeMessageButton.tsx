@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Copy, MessageCircle, Send, X } from "lucide-react";
+import EditableMessageBox from "@/components/EditableMessageBox";
+import { usePersonalizedChargeMessage } from "@/hooks/usePersonalizedChargeMessage";
+import { saveLearnedChargeMessageTemplate } from "@/lib/chargeMessageTemplates";
 import { recordChargeLog } from "@/lib/database";
-import { buildChargeMessage, buildWhatsappUrl } from "@/lib/format";
+import { buildWhatsappUrl, type ChargeMessageInput } from "@/lib/format";
 import type { MessageTone } from "@/lib/types";
 
 const toneOptions: Array<{ value: MessageTone; label: string }> = [
@@ -26,6 +29,7 @@ type ChargeMessageButtonProps = {
   dueDate?: string;
   iconSize?: number;
   label?: string;
+  messageOverride?: string;
   phone: string;
   pixKey?: string;
   userId?: string;
@@ -44,6 +48,7 @@ export default function ChargeMessageButton({
   dueDate,
   iconSize = 18,
   label,
+  messageOverride,
   phone,
   pixKey,
   userId,
@@ -52,27 +57,42 @@ export default function ChargeMessageButton({
   const [tone, setTone] = useState<MessageTone>(defaultTone);
   const [messageText, setMessageText] = useState("");
   const [copied, setCopied] = useState(false);
-  const generatedMessage = useMemo(
-    () =>
-      buildChargeMessage({
-        amount,
-        daysOverdue,
-        debtorName,
-        debtsCount,
-        description,
-        dueDate,
-        pixKey,
-        tone,
-      }),
+  const messageInput = useMemo<ChargeMessageInput>(
+    () => ({
+      amount,
+      daysOverdue,
+      debtorName,
+      debtsCount,
+      description,
+      dueDate,
+      pixKey,
+      tone,
+    }),
     [amount, daysOverdue, debtorName, debtsCount, description, dueDate, pixKey, tone],
   );
+  const generatedMessage = usePersonalizedChargeMessage(userId, messageInput);
+  const preparedMessage = messageOverride !== undefined && tone === defaultTone ? messageOverride : generatedMessage;
+  const canUseMessage = messageText.trim().length > 0;
 
   useEffect(() => {
     if (open) {
-      setMessageText(generatedMessage);
+      setMessageText(preparedMessage);
       setCopied(false);
     }
-  }, [generatedMessage, open]);
+  }, [open, preparedMessage]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
 
   async function logCharge(action: "copied" | "sent") {
     if (!userId || !customerId) return;
@@ -96,7 +116,14 @@ export default function ChargeMessageButton({
     setOpen(true);
   }
 
+  function handleMessageChange(value: string) {
+    setMessageText(value);
+    saveLearnedChargeMessageTemplate(userId, tone, value, messageInput);
+  }
+
   async function handleCopy() {
+    if (!canUseMessage) return;
+
     await navigator.clipboard.writeText(messageText);
     await logCharge("copied");
     setCopied(true);
@@ -104,6 +131,8 @@ export default function ChargeMessageButton({
   }
 
   function handleSend() {
+    if (!canUseMessage) return;
+
     window.open(buildWhatsappUrl(phone, messageText), "_blank", "noopener,noreferrer");
     void logCharge("sent");
   }
@@ -124,18 +153,18 @@ export default function ChargeMessageButton({
       </button>
 
       {open && typeof document !== "undefined" && createPortal(
-        <div className="fixed inset-0 z-[100] bg-black/30 flex items-end justify-center px-4 pb-4 pt-12">
+        <div className="app-modal z-[100]">
           <button
             type="button"
             aria-label="Fechar previa"
-            className="absolute inset-0 cursor-default"
+            className="app-modal__backdrop"
             onClick={() => setOpen(false)}
           />
           <div
             role="dialog"
             aria-modal="true"
             aria-label="Previa da mensagem"
-            className="relative w-full max-w-lg bg-white rounded-[1.4rem] p-5 shadow-2xl space-y-4 page-transition"
+            className="app-modal__panel relative w-full max-w-lg bg-white rounded-[1.4rem] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -167,18 +196,18 @@ export default function ChargeMessageButton({
               ))}
             </div>
 
-            <textarea
+            <EditableMessageBox
               value={messageText}
-              onChange={(event) => setMessageText(event.target.value)}
-              rows={6}
-              className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl text-sm leading-relaxed text-gray-700 resize-none outline-none focus:ring-2 focus:ring-ios-blue/20"
+              onChange={handleMessageChange}
+              rows={7}
             />
 
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={handleCopy}
-                className="p-3 rounded-xl bg-gray-900 text-white font-semibold text-sm flex items-center justify-center gap-2"
+                disabled={!canUseMessage}
+                className="p-3 rounded-xl bg-gray-900 text-white font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 <Copy size={16} />
                 {copied ? "Copiada" : "Copiar"}
@@ -186,7 +215,8 @@ export default function ChargeMessageButton({
               <button
                 type="button"
                 onClick={handleSend}
-                className="p-3 rounded-xl bg-green-500 text-white font-semibold text-sm flex items-center justify-center gap-2"
+                disabled={!canUseMessage}
+                className="p-3 rounded-xl bg-green-500 text-white font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 <Send size={16} />
                 WhatsApp

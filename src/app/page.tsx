@@ -2,10 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, ArrowRight, CalendarClock, PieChart, Plus, TrendingUp, Wallet } from "lucide-react";
+import { AlertCircle, ArrowRight, Bell, CalendarClock, PieChart, Plus, TrendingUp, Wallet, X } from "lucide-react";
 import Image from "next/image";
 import ChargeMessageButton from "@/components/ChargeMessageButton";
+import ThemeSelector from "@/components/ThemeSelector";
+import Toast from "@/components/Toast";
 import { useAppData } from "@/hooks/useAppData";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import {
   formatCurrency,
   formatDate,
@@ -14,36 +17,39 @@ import {
 
 export default function Dashboard() {
   const { chargeLogs, debts, loading, profile, stats, user } = useAppData();
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [reminderWindow, setReminderWindow] = useState(1);
+  const notifications = usePushNotifications();
   const [hideOnboarding, setHideOnboarding] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [noticeTone, setNoticeTone] = useState<"success" | "info" | "error">("success");
   const attentionCount = stats.overdueCount + stats.dueTodayCount + stats.dueSoonCount;
   const recentDebts = debts.slice(0, 3);
   const reminderDebts = useMemo(
     () =>
-      notificationsEnabled
-        ? debts
-            .filter((debt) => debt.status === "open" && (debt.isOverdue || debt.daysUntilDue <= reminderWindow))
-            .sort((a, b) => b.daysOverdue - a.daysOverdue || a.daysUntilDue - b.daysUntilDue)
-            .slice(0, 3)
-        : [],
-    [debts, notificationsEnabled, reminderWindow],
+      debts
+        .filter((debt) => debt.status === "open" && (debt.isOverdue || debt.daysUntilDue <= 1))
+        .sort((a, b) => b.daysOverdue - a.daysOverdue || a.daysUntilDue - b.daysUntilDue)
+        .slice(0, 3),
+    [debts],
   );
 
   useEffect(() => {
-    const savedEnabled = window.localStorage.getItem("me-pague:notifications-enabled");
-    const savedWindow = window.localStorage.getItem("me-pague:reminder-window");
-
-    if (savedEnabled) {
-      setNotificationsEnabled(savedEnabled === "true");
-    }
-
-    if (savedWindow) {
-      setReminderWindow(Number(savedWindow));
-    }
-
     setHideOnboarding(window.localStorage.getItem("me-pague:onboarding-hidden") === "true");
   }, []);
+
+  async function handleEnableNotifications() {
+    setNotice("");
+
+    try {
+      await notifications.enable();
+      setNoticeTone("success");
+      setNotice("Notificacoes ativadas para as 8h.");
+      window.setTimeout(() => setNotice(""), 2400);
+    } catch (error) {
+      setNoticeTone("error");
+      setNotice(error instanceof Error ? error.message : "Nao foi possivel ativar notificacoes.");
+      window.setTimeout(() => setNotice(""), 3000);
+    }
+  }
 
   if (loading) {
     return (
@@ -60,6 +66,7 @@ export default function Dashboard() {
 
   return (
     <div className="p-6 pb-32 space-y-7 ios-fade-in">
+      <Toast message={notice} tone={noticeTone} />
       <header className="pt-4 flex justify-between items-center px-1">
         <div className="flex items-center gap-3">
           <Image src="/logo.jpeg" alt="Me Pague Logo" width={44} height={44} className="rounded-xl shadow-sm" />
@@ -68,8 +75,11 @@ export default function Dashboard() {
             <p className="text-ios-gray text-[13px] font-medium leading-tight">Controle de debitos</p>
           </div>
         </div>
-        <div className="w-11 h-11 bg-gray-100 rounded-full flex items-center justify-center text-black font-semibold overflow-hidden">
-          {profile?.name?.[0]?.toUpperCase() || "M"}
+        <div className="flex items-center gap-2">
+          <ThemeSelector />
+          <div className="w-11 h-11 bg-gray-100 rounded-full flex items-center justify-center text-black font-semibold overflow-hidden">
+            {profile?.name?.[0]?.toUpperCase() || "M"}
+          </div>
         </div>
       </header>
 
@@ -96,6 +106,36 @@ export default function Dashboard() {
             <OnboardingStep done={debts.length > 0} href="/new-debt" label="Cadastrar divida" />
             <OnboardingStep done={chargeLogs.length > 0} href="/debtors?filter=open" label="Mandar cobranca" />
           </div>
+        </section>
+      )}
+
+      {notifications.canAsk && !notifications.promptDismissed && !notifications.dailyRemindersEnabled && (
+        <section className="card rounded-[18px] p-4 space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center shrink-0">
+              <Bell size={18} strokeWidth={2} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="font-semibold text-sm text-gray-900">Receber avisos as 8h?</h2>
+              <p className="text-xs text-gray-400 mt-1">Quando houver recebimento para amanha, o Me Pague te avisa.</p>
+            </div>
+            <button
+              type="button"
+              onClick={notifications.dismissPrompt}
+              className="w-8 h-8 rounded-full bg-gray-50 text-gray-400 flex items-center justify-center btn-press"
+              aria-label="Ocultar convite de notificacoes"
+            >
+              <X size={15} />
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={handleEnableNotifications}
+            disabled={notifications.saving}
+            className="w-full rounded-xl bg-gray-900 text-white py-3 text-sm font-semibold disabled:opacity-50 btn-press"
+          >
+            {notifications.saving ? "Ativando..." : "Ativar notificacoes"}
+          </button>
         </section>
       )}
 

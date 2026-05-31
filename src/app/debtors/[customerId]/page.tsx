@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useParams } from "next/navigation";
 import {
   CalendarClock,
@@ -13,12 +13,15 @@ import {
   X,
 } from "lucide-react";
 import ChargeMessageButton from "@/components/ChargeMessageButton";
+import EditableMessageBox from "@/components/EditableMessageBox";
 import MobileHeader from "@/components/MobileHeader";
 import Toast from "@/components/Toast";
 import { useAppData } from "@/hooks/useAppData";
+import { usePersonalizedChargeMessage } from "@/hooks/usePersonalizedChargeMessage";
+import { saveLearnedChargeMessageTemplate } from "@/lib/chargeMessageTemplates";
 import { deleteDebt, markDebtAsOpen, recordChargeLog, recordPayment, updateCustomer, updateDebt } from "@/lib/database";
+import { getDebtCardActions, getOpenDebtSummary, type DebtCardAction, type DebtSummaryTone } from "@/lib/debtPresentation";
 import {
-  buildChargeMessage,
   formatCurrency,
   formatCurrencyInput,
   formatDate,
@@ -27,6 +30,7 @@ import {
   getDebtTimingLabel,
   normalizePhone,
   parseCurrencyInput,
+  type ChargeMessageInput,
 } from "@/lib/format";
 import type { DebtWithCustomer, MessageTone } from "@/lib/types";
 
@@ -35,6 +39,11 @@ const toneOptions: Array<{ value: MessageTone; label: string }> = [
   { value: "firm", label: "Firme" },
   { value: "overdue", label: "Atraso" },
 ];
+const summaryToneClassNames: Record<DebtSummaryTone, string> = {
+  danger: "bg-red-50 text-red-500",
+  info: "bg-blue-50 text-blue-500",
+  success: "bg-green-50 text-green-600",
+};
 
 export default function DebtorDetailPage() {
   const params = useParams<{ customerId: string }>();
@@ -46,6 +55,7 @@ export default function DebtorDetailPage() {
   const [editingDebtId, setEditingDebtId] = useState<string | null>(null);
   const [editingCustomer, setEditingCustomer] = useState(false);
   const [paymentDebt, setPaymentDebt] = useState<DebtWithCustomer | null>(null);
+  const [messageText, setMessageText] = useState("");
   const [toast, setToast] = useState("");
 
   const customer = customers.find((item) => item.id === customerId);
@@ -61,19 +71,30 @@ export default function DebtorDetailPage() {
   const totalOriginal = openDebts.reduce((sum, debt) => sum + debt.amount, 0);
   const totalPaid = customerDebts.reduce((sum, debt) => sum + debt.paidAmount, 0);
   const overdueCount = openDebts.filter((debt) => debt.isOverdue).length;
+  const openDebtSummary = getOpenDebtSummary(openDebts.length, overdueCount);
   const maxDaysOverdue = openDebts.reduce((max, debt) => Math.max(max, debt.daysOverdue), 0);
   const nextDebt = openDebts
     .slice()
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0];
-  const message = buildChargeMessage({
-    debtorName,
-    amount: totalOpen,
-    pixKey: profile?.pixKey,
-    tone: overdueCount > 0 && tone === "friendly" ? "overdue" : tone,
-    dueDate: nextDebt?.dueDate,
-    daysOverdue: maxDaysOverdue,
-    debtsCount: openDebts.length,
-  });
+  const effectiveTone = overdueCount > 0 && tone === "friendly" ? "overdue" : tone;
+  const messageInput = useMemo<ChargeMessageInput>(
+    () => ({
+      amount: totalOpen,
+      daysOverdue: maxDaysOverdue,
+      debtorName,
+      debtsCount: openDebts.length,
+      dueDate: nextDebt?.dueDate,
+      pixKey: profile?.pixKey,
+      tone: effectiveTone,
+    }),
+    [debtorName, effectiveTone, maxDaysOverdue, nextDebt?.dueDate, openDebts.length, profile?.pixKey, totalOpen],
+  );
+  const generatedMessage = usePersonalizedChargeMessage(user?.id, messageInput);
+
+  useEffect(() => {
+    setMessageText(generatedMessage);
+  }, [generatedMessage]);
+
   const installmentGroups = useMemo(() => buildInstallmentGroups(customerDebts), [customerDebts]);
   const lastCharge = chargeLogs
     .filter((log) => log.customerId === customerId)
@@ -90,14 +111,16 @@ export default function DebtorDetailPage() {
   }
 
   async function handleCopy() {
-    await navigator.clipboard.writeText(message);
+    if (!messageText.trim()) return;
+
+    await navigator.clipboard.writeText(messageText);
     if (user && customerId) {
       void recordChargeLog(user.id, {
         action: "copied",
         customerId,
         customerName: debtorName,
-        message,
-        tone: overdueCount > 0 && tone === "friendly" ? "overdue" : tone,
+        message: messageText,
+        tone: effectiveTone,
       });
     }
     setCopied(true);
@@ -128,6 +151,11 @@ export default function DebtorDetailPage() {
     } finally {
       setBusyDebtId(null);
     }
+  }
+
+  function handleMessageChange(value: string) {
+    setMessageText(value);
+    saveLearnedChargeMessageTemplate(user?.id, effectiveTone, value, messageInput);
   }
 
   if (loading) {
@@ -192,8 +220,8 @@ export default function DebtorDetailPage() {
             )}
             {totalPaid > 0 && <p className="text-xs text-green-500 mt-1">Ja recebido: {formatCurrency(totalPaid)}</p>}
           </div>
-          <div className={`px-3 py-1.5 rounded-full text-xs font-semibold ${overdueCount > 0 ? "bg-red-50 text-red-500" : "bg-blue-50 text-blue-500"}`}>
-            {overdueCount > 0 ? `${overdueCount} atrasada${overdueCount === 1 ? "" : "s"}` : `${openDebts.length} aberta${openDebts.length === 1 ? "" : "s"}`}
+          <div className={`px-3 py-1.5 rounded-full text-xs font-semibold ${summaryToneClassNames[openDebtSummary.tone]}`}>
+            {openDebtSummary.label}
           </div>
         </div>
 
@@ -212,7 +240,7 @@ export default function DebtorDetailPage() {
               ))}
             </div>
 
-            <p className="p-3 rounded-xl bg-gray-50 text-sm leading-relaxed text-gray-600">{message}</p>
+            <EditableMessageBox value={messageText} onChange={handleMessageChange} rows={5} />
 
             <div className="grid grid-cols-2 gap-2">
               <ChargeMessageButton
@@ -221,9 +249,10 @@ export default function DebtorDetailPage() {
                 daysOverdue={maxDaysOverdue}
                 debtorName={debtorName}
                 debtsCount={openDebts.length}
-                defaultTone={overdueCount > 0 && tone === "friendly" ? "overdue" : tone}
+                defaultTone={effectiveTone}
                 dueDate={nextDebt?.dueDate}
                 label="WhatsApp"
+                messageOverride={messageText}
                 phone={debtorPhone}
                 pixKey={profile?.pixKey}
                 userId={user?.id}
@@ -232,7 +261,8 @@ export default function DebtorDetailPage() {
               <button
                 type="button"
                 onClick={handleCopy}
-                className="p-3 bg-gray-900 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 btn-press"
+                disabled={!messageText.trim()}
+                className="p-3 bg-gray-900 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 btn-press disabled:opacity-50"
               >
                 <Copy size={17} />
                 {copied ? "Copiada" : "Copiar"}
@@ -376,7 +406,7 @@ function DebtSection({
       ) : (
         <div className="space-y-2">
           {debts.map((debt) =>
-            editingDebtId === debt.id ? (
+            editingDebtId === debt.id && debt.status === "open" ? (
               <EditDebtForm key={debt.id} debt={debt} userId={userId} onCancel={() => onEdit(null)} />
             ) : (
               <DebtCard
@@ -422,6 +452,7 @@ function DebtCard({
 }) {
   const isPaid = debt.status === "paid";
   const displayAmount = isPaid ? debt.paidAmount || debt.amount : debt.outstandingAmount;
+  const actions = getDebtCardActions(debt.status);
 
   return (
     <div className="card rounded-[14px] p-4 space-y-3">
@@ -436,58 +467,130 @@ function DebtCard({
         </div>
         <div className="text-right">
           <p className="font-semibold text-sm text-gray-900">{formatCurrency(displayAmount)}</p>
-          {debt.paidAmount > 0 && <p className="text-[11px] text-green-500">Pago {formatCurrency(debt.paidAmount)}</p>}
+          {!isPaid && debt.paidAmount > 0 && <p className="text-[11px] text-green-500">Pago {formatCurrency(debt.paidAmount)}</p>}
           {debt.amountWithInterest !== debt.amount && debt.status !== "paid" && (
             <p className="text-[11px] text-gray-400">Base {formatCurrency(debt.amount)}</p>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-2">
-        <button
-          type="button"
-          onClick={isPaid ? onReopen : onMarkPaid}
-          disabled={busy}
-          className={`p-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50 ${isPaid ? "bg-gray-50 text-gray-500" : "bg-green-50 text-green-600"}`}
-        >
-          {isPaid ? <RotateCcw size={14} /> : <Check size={14} />}
-          {isPaid ? "Reabrir" : "Pagar"}
-        </button>
-        <button
-          type="button"
-          onClick={onEdit}
-          className="p-2.5 rounded-xl bg-gray-50 text-gray-500 text-xs font-semibold flex items-center justify-center gap-1.5"
-        >
-          <Edit3 size={14} />
-          Editar
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          disabled={busy}
-          className="p-2.5 rounded-xl bg-red-50 text-red-500 text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50"
-        >
-          <Trash2 size={14} />
-          Excluir
-        </button>
-        <ChargeMessageButton
-          amount={debt.outstandingAmount}
-          customerId={debt.customerId}
-          daysOverdue={debt.daysOverdue}
-          debtId={debt.id}
-          debtorName={debt.customerName}
-          defaultTone={debt.isOverdue ? "overdue" : "friendly"}
-          description={debt.description}
-          dueDate={debt.dueDate}
-          iconSize={14}
-          label="Cobrar"
-          phone={debt.customerPhone}
-          pixKey={pixKey}
-          userId={userId}
-          className="p-2.5 rounded-xl bg-green-50 text-green-600 text-xs font-semibold flex items-center justify-center gap-1.5"
-        />
+      <div className={`grid gap-2 ${actions.length === 2 ? "grid-cols-2" : "grid-cols-4"}`}>
+        {actions.map((action) =>
+          renderDebtAction({
+            action,
+            busy,
+            debt,
+            onDelete,
+            onEdit,
+            onMarkPaid,
+            onReopen,
+            pixKey,
+            userId,
+          }),
+        )}
       </div>
     </div>
+  );
+}
+
+function renderDebtAction({
+  action,
+  busy,
+  debt,
+  onDelete,
+  onEdit,
+  onMarkPaid,
+  onReopen,
+  pixKey,
+  userId,
+}: {
+  action: DebtCardAction;
+  busy: boolean;
+  debt: DebtWithCustomer;
+  onDelete: () => void;
+  onEdit: () => void;
+  onMarkPaid: () => void;
+  onReopen: () => void;
+  pixKey?: string;
+  userId?: string;
+}) {
+  if (action === "pay") {
+    return (
+      <button
+        key={action}
+        type="button"
+        onClick={onMarkPaid}
+        disabled={busy}
+        className="p-2.5 rounded-xl bg-green-50 text-green-600 text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50"
+      >
+        <Check size={14} />
+        Pagar
+      </button>
+    );
+  }
+
+  if (action === "reopen") {
+    return (
+      <button
+        key={action}
+        type="button"
+        onClick={onReopen}
+        disabled={busy}
+        className="p-2.5 rounded-xl bg-gray-50 text-gray-500 text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50"
+      >
+        <RotateCcw size={14} />
+        Reabrir
+      </button>
+    );
+  }
+
+  if (action === "edit") {
+    return (
+      <button
+        key={action}
+        type="button"
+        onClick={onEdit}
+        className="p-2.5 rounded-xl bg-gray-50 text-gray-500 text-xs font-semibold flex items-center justify-center gap-1.5"
+      >
+        <Edit3 size={14} />
+        Editar
+      </button>
+    );
+  }
+
+  if (action === "delete") {
+    return (
+      <button
+        key={action}
+        type="button"
+        onClick={onDelete}
+        disabled={busy}
+        className="p-2.5 rounded-xl bg-red-50 text-red-500 text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50"
+      >
+        <Trash2 size={14} />
+        Excluir
+      </button>
+    );
+  }
+
+  return (
+    <ChargeMessageButton
+      key={action}
+      amount={debt.outstandingAmount}
+      customerId={debt.customerId}
+      daysOverdue={debt.daysOverdue}
+      debtId={debt.id}
+      debtorName={debt.customerName}
+      defaultTone={debt.isOverdue ? "overdue" : "friendly"}
+      description={debt.description}
+      dueDate={debt.dueDate}
+      iconSize={14}
+      label="Cobrar"
+      phone={debt.customerPhone}
+      pixKey={pixKey}
+      userId={userId}
+      className="p-2.5 rounded-xl bg-green-50 text-green-600 text-xs font-semibold flex items-center justify-center gap-1.5"
+    />
   );
 }
 
@@ -508,6 +611,17 @@ function PaymentModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const parsedAmount = mode === "total" ? debt.outstandingAmount : parseCurrencyInput(amount);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   async function handleSubmit() {
     if (!parsedAmount || parsedAmount <= 0 || parsedAmount > debt.outstandingAmount) {
@@ -536,9 +650,9 @@ function PaymentModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[95] bg-black/30 flex items-end justify-center px-4 pb-4 pt-12">
-      <button type="button" aria-label="Fechar pagamento" className="absolute inset-0 cursor-default" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-white rounded-[1.4rem] p-5 shadow-2xl space-y-4 page-transition">
+    <div className="app-modal z-[95]">
+      <button type="button" aria-label="Fechar pagamento" className="app-modal__backdrop" onClick={onClose} />
+      <div role="dialog" aria-modal="true" aria-label="Registrar pagamento" className="app-modal__panel relative w-full max-w-lg bg-white rounded-[1.4rem] p-5 shadow-2xl space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Registrar pagamento</p>

@@ -1,35 +1,30 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import BottomNav from "@/components/BottomNav";
 import Image from "next/image";
 import { useAuth } from "@/components/AuthProvider";
-import { subscribeUserProfile } from "@/lib/database";
+import { AppDataProvider, useAppData } from "@/hooks/useAppData";
 
 export default function AppShell({ children }: { children: ReactNode }) {
+  return (
+    <AppDataProvider>
+      <AppShellContent>{children}</AppShellContent>
+    </AppDataProvider>
+  );
+}
+
+function AppShellContent({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, loading } = useAuth();
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  const [profileLoaded, setProfileLoaded] = useState(false);
+  const { loading: dataLoading, profile } = useAppData();
   const isLoginPage = pathname === "/login";
   const isAdminPage = pathname.startsWith("/admin");
+  const isSuperAdmin = profile?.role === "superadmin" && profile.status === "active";
+  const profileLoaded = !user || !dataLoading;
   const hideBottomNav = isLoginPage || pathname === "/new-debt" || isAdminPage || isSuperAdmin;
-
-  useEffect(() => {
-    if (!user) {
-      setIsSuperAdmin(false);
-      setProfileLoaded(true);
-      return;
-    }
-
-    setProfileLoaded(false);
-    return subscribeUserProfile(user.id, (profile) => {
-      setIsSuperAdmin(profile?.role === "superadmin" && profile.status === "active");
-      setProfileLoaded(true);
-    });
-  }, [user]);
 
   useEffect(() => {
     if (!loading && !user && !isLoginPage) {

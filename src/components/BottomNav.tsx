@@ -2,10 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
 import { Home, PieChart, ShieldCheck, User, Users } from "lucide-react";
-import { useAuth } from "@/components/AuthProvider";
-import { subscribeUserProfile } from "@/lib/database";
+import { useAppData } from "@/hooks/useAppData";
 import { cn } from "@/lib/utils";
 
 const baseTabs = [
@@ -17,19 +15,8 @@ const baseTabs = [
 
 export default function BottomNav() {
   const pathname = usePathname();
-  const { user } = useAuth();
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-
-  useEffect(() => {
-    if (!user) {
-      setIsSuperAdmin(false);
-      return;
-    }
-
-    return subscribeUserProfile(user.id, (profile) => {
-      setIsSuperAdmin(profile?.role === "superadmin" && profile.status === "active");
-    });
-  }, [user]);
+  const { profile } = useAppData();
+  const isSuperAdmin = profile?.role === "superadmin" && profile.status === "active";
 
   const tabs = isSuperAdmin
     ? [...baseTabs.slice(0, 3), { name: "Admin", href: "/admin", icon: ShieldCheck }, baseTabs[3]]
