@@ -298,6 +298,7 @@ body {
     overscroll-behavior: contain;
     padding: max(0.85rem, env(safe-area-inset-top)) 0.85rem max(0.85rem, env(safe-area-inset-bottom));
     position: fixed;
+    animation: fadeInModal 200ms ease-out both;
   }
 
   .app-modal__backdrop {
@@ -331,6 +332,37 @@ body {
   @media (prefers-reduced-motion: reduce) {
     .app-modal__panel {
       animation: none;
+    }
+  }
+
+  @keyframes fadeInModal {
+    from {
+      background: rgba(0, 0, 0, 0);
+    }
+    to {
+      background: var(--overlay);
+    }
+  }
+
+  @keyframes modalRise {
+    from {
+      opacity: 0;
+      transform: translateY(24px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes modalPop {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
     }
   }
 

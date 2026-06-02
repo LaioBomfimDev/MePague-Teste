@@ -54,7 +54,10 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const { admin, user } = await requireAuthenticatedUser(request);
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body) {
+      throw new UserApiError("Corpo da requisição inválido ou ausente.", 400);
+    }
     const enabled = asEnabled(body.dailyRemindersEnabled ?? body.enabled);
     const now = new Date().toISOString();
 

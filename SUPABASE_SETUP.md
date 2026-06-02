@@ -73,7 +73,7 @@ Crie um arquivo `.env.local` na pasta `web`:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sua-chave-publicavel
-NEXT_PUBLIC_SUPERADMIN_EMAIL=superadm@mepague.app
+NEXT_PUBLIC_SUPERADMIN_EMAIL=laiolindowow10@gmail.com
 ```
 
 Ou, usando chave legada:
@@ -81,7 +81,7 @@ Ou, usando chave legada:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-chave-anon-public
-NEXT_PUBLIC_SUPERADMIN_EMAIL=superadm@mepague.app
+NEXT_PUBLIC_SUPERADMIN_EMAIL=laiolindowow10@gmail.com
 ```
 
 Nunca coloque `service_role` no frontend.
@@ -90,7 +90,7 @@ Para usar o painel `/admin`, adicione tambem no `.env.local` local ou nas variav
 
 ```bash
 SUPABASE_SERVICE_ROLE_KEY=sua-chave-service-role
-SUPERADMIN_EMAIL=superadm@mepague.app
+SUPERADMIN_EMAIL=laiolindowow10@gmail.com
 SUPERADMIN_PASSWORD=654321
 ```
 
@@ -135,8 +135,8 @@ No Supabase:
 6. Em Redirect URLs, adicione as URLs usadas pelo app:
 
 ```txt
-http://localhost:3000/login
-http://localhost:3006/login
+http://localhost:3033/login
+http://127.0.0.1:3033/login
 https://seu-dominio.com/login
 ```
 
@@ -148,8 +148,8 @@ No Google Cloud:
 2. Em Authorized JavaScript origins, adicione as origens do app:
 
 ```txt
-http://localhost:3000
-http://localhost:3006
+http://localhost:3033
+http://127.0.0.1:3033
 https://seu-dominio.com
 ```
 
@@ -172,7 +172,7 @@ Troque `<project-ref>` pelo ref do seu projeto Supabase. Novos usuarios que entr
 npm run superadmin
 ```
 
-Depois entre no app com login `superadm` e senha `654321`.
+Depois entre no app com `laiolindowow10@gmail.com` e senha `654321`.
 
 ## 7. Rodar localmente
 
@@ -180,7 +180,7 @@ Depois entre no app com login `superadm` e senha `654321`.
 npm run dev
 ```
 
-Abra http://localhost:3000, crie uma conta, cadastre uma divida e confira:
+Abra http://localhost:3033, crie uma conta, cadastre uma divida e confira:
 
 - Table Editor > `profiles`: deve existir um perfil com seu usuario.
 - Table Editor > `customers`: deve aparecer o cliente cadastrado.

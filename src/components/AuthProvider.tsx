@@ -28,8 +28,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const DEMO_SESSION_KEY = "me-pague:demo-session";
 const DEMO_USERNAME = "admlaio";
 const DEMO_PASSWORD = "123456";
-const SUPERADMIN_USERNAME = "superadm";
-const SUPERADMIN_EMAIL = process.env.NEXT_PUBLIC_SUPERADMIN_EMAIL || "superadm@mepague.app";
+const DEMO_ENABLED = process.env.NEXT_PUBLIC_ENABLE_DEMO === "true";
 const AUTH_TIMEOUT_MS = 5000;
 type UserAccessState = Awaited<ReturnType<typeof getUserAccessState>>;
 
@@ -66,16 +65,6 @@ function setStoredDemoSession(enabled: boolean) {
   }
 }
 
-function resolveAuthEmail(value: string) {
-  const normalized = value.trim().toLowerCase();
-
-  if (normalized === SUPERADMIN_USERNAME) {
-    return SUPERADMIN_EMAIL;
-  }
-
-  return value.trim();
-}
-
 function createUserAlreadyExistsError() {
   const error = new Error("Esse email ja tem cadastro. Entre pela aba Entrar.") as Error & { code: string };
 
@@ -106,6 +95,7 @@ async function getSessionAccessState(session: Session): Promise<UserAccessState>
     return getUserAccessState(session.user);
   }
 }
+
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [authNotice, setAuthNotice] = useState<AuthContextValue["authNotice"]>(null);
@@ -178,6 +168,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "INITIAL_SESSION") return;
 
+      if (event === "SIGNED_IN") {
+        try {
+          window.localStorage.removeItem("me-pague:notifications-prompt-dismissed");
+          window.localStorage.removeItem("me-pague:pwa-prompt-dismissed");
+        } catch {}
+      }
+
       void applySession(session ?? null);
     });
 
@@ -195,11 +192,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     if (email.trim().toLowerCase() === DEMO_USERNAME) {
+      if (!DEMO_ENABLED) {
+        throw new Error("Modo demo desativado neste ambiente.");
+      }
+
       if (password !== DEMO_PASSWORD) {
-        throw new Error("Invalid demo password");
+        throw new Error("Senha do demo inválida.");
       }
 
       setStoredDemoSession(true);
+      try {
+        window.localStorage.removeItem("me-pague:notifications-prompt-dismissed");
+        window.localStorage.removeItem("me-pague:pwa-prompt-dismissed");
+      } catch {}
       setUser(createDemoUser());
       return;
     }
@@ -210,7 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setAuthNotice(null);
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email: resolveAuthEmail(email), password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
 
     if (error) throw error;
     if (data.session) {

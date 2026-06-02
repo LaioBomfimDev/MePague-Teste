@@ -111,7 +111,12 @@ export function usePushNotifications() {
 
   return useMemo(
     () => ({
-      canAsk: Boolean(user && !isDemoUser && supported && permission === "default"),
+      canAsk: Boolean(
+        user &&
+          !isDemoUser &&
+          supported &&
+          (permission === "default" || (permission === "granted" && !preference.dailyRemindersEnabled))
+      ),
       dailyRemindersEnabled: preference.dailyRemindersEnabled,
       disable,
       dismissPrompt,

@@ -1,14 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, ArrowRight, Bell, CalendarClock, PieChart, Plus, TrendingUp, Wallet, X } from "lucide-react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { AlertCircle, ArrowRight, Bell, CalendarClock, PieChart, Plus, Smartphone, TrendingUp, Wallet, X } from "lucide-react";
 import Image from "next/image";
 import ChargeMessageButton from "@/components/ChargeMessageButton";
 import ThemeSelector from "@/components/ThemeSelector";
 import Toast from "@/components/Toast";
+import OnboardingWizard from "@/components/OnboardingWizard";
 import { useAppData } from "@/hooks/useAppData";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { usePwaInstall } from "@/hooks/usePwaInstall";
 import {
   formatCurrency,
   formatDate,
@@ -16,12 +19,48 @@ import {
 } from "@/lib/format";
 
 export default function Dashboard() {
-  const { chargeLogs, debts, loading, profile, stats, user } = useAppData();
+  const { debts, loading, profile, stats, user } = useAppData();
   const notifications = usePushNotifications();
-  const [hideOnboarding, setHideOnboarding] = useState(false);
+  const pwa = usePwaInstall();
   const [notice, setNotice] = useState("");
   const [noticeTone, setNoticeTone] = useState<"success" | "info" | "error">("success");
   const attentionCount = stats.overdueCount + stats.dueTodayCount + stats.dueSoonCount;
+  const dismissNotificationPrompt = notifications.dismissPrompt;
+  const dismissPwaPrompt = pwa.dismiss;
+  const notificationPromptTitleId = useId();
+  const pwaPromptTitleId = useId();
+
+  const [onboardingDelayPassed, setOnboardingDelayPassed] = useState(false);
+
+  useEffect(() => {
+    if (loading) return;
+    const timer = window.setTimeout(() => setOnboardingDelayPassed(true), 1500);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
+
+  const [initialPixKeyChecked, setInitialPixKeyChecked] = useState(false);
+  const [hasInitialPixKey, setHasInitialPixKey] = useState(true);
+
+  useEffect(() => {
+    if (!loading && profile && !initialPixKeyChecked) {
+      setHasInitialPixKey(Boolean(profile.pixKey));
+      setInitialPixKeyChecked(true);
+    }
+  }, [loading, profile, initialPixKeyChecked]);
+
+  const [onboardingCompleted, setOnboardingCompleted] = useState(false);
+
+  const showOnboarding = onboardingDelayPassed && profile && !hasInitialPixKey && !onboardingCompleted;
+
+  const showPwaPrompt = onboardingDelayPassed && pwa.supported && !pwa.promptDismissed && !showOnboarding;
+  const showNotificationPrompt =
+    onboardingDelayPassed &&
+    notifications.canAsk &&
+    !notifications.promptDismissed &&
+    !notifications.dailyRemindersEnabled &&
+    !showPwaPrompt &&
+    !showOnboarding;
+
   const recentDebts = debts.slice(0, 3);
   const reminderDebts = useMemo(
     () =>
@@ -32,9 +71,61 @@ export default function Dashboard() {
     [debts],
   );
 
+  // Scroll lock para os modais do Dashboard
   useEffect(() => {
-    setHideOnboarding(window.localStorage.getItem("me-pague:onboarding-hidden") === "true");
-  }, []);
+    const shouldLock = showPwaPrompt || showNotificationPrompt || showOnboarding;
+    if (shouldLock) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [showPwaPrompt, showNotificationPrompt, showOnboarding]);
+
+  useEffect(() => {
+    if (!showNotificationPrompt) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        dismissNotificationPrompt();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [dismissNotificationPrompt, showNotificationPrompt]);
+
+  useEffect(() => {
+    if (!showPwaPrompt) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        dismissPwaPrompt();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [dismissPwaPrompt, showPwaPrompt]);
+
+  async function handleInstallPwa() {
+    setNotice("");
+
+    try {
+      const installed = await pwa.install();
+      if (installed) {
+        setNoticeTone("success");
+        setNotice("App adicionado com sucesso!");
+        window.setTimeout(() => setNotice(""), 2400);
+      }
+    } catch {
+      setNoticeTone("error");
+      setNotice("Não foi possível adicionar o atalho.");
+      window.setTimeout(() => setNotice(""), 2400);
+    }
+  }
 
   async function handleEnableNotifications() {
     setNotice("");
@@ -42,11 +133,11 @@ export default function Dashboard() {
     try {
       await notifications.enable();
       setNoticeTone("success");
-      setNotice("Notificacoes ativadas para as 8h.");
+      setNotice("Notificações ativadas para as 8h.");
       window.setTimeout(() => setNotice(""), 2400);
     } catch (error) {
       setNoticeTone("error");
-      setNotice(error instanceof Error ? error.message : "Nao foi possivel ativar notificacoes.");
+      setNotice(error instanceof Error ? error.message : "Não foi possível ativar as notificações.");
       window.setTimeout(() => setNotice(""), 3000);
     }
   }
@@ -72,7 +163,7 @@ export default function Dashboard() {
           <Image src="/logo.jpeg" alt="Me Pague Logo" width={44} height={44} className="rounded-xl shadow-sm" />
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-black">Me Pague</h1>
-            <p className="text-ios-gray text-[13px] font-medium leading-tight">Controle de debitos</p>
+            <p className="text-ios-gray text-[13px] font-medium leading-tight">Controle de débitos</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -83,60 +174,32 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {!hideOnboarding && (!profile?.pixKey || debts.length === 0 || chargeLogs.length === 0) && (
-        <section className="card rounded-[18px] p-4 space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="font-semibold text-sm text-gray-900">Primeiros passos</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Deixe o app pronto para cobrar em poucos toques.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                window.localStorage.setItem("me-pague:onboarding-hidden", "true");
-                setHideOnboarding(true);
-              }}
-              className="text-xs font-semibold text-gray-400"
-            >
-              Ocultar
-            </button>
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <OnboardingStep done={Boolean(profile?.pixKey)} href="/profile" label="Adicionar Pix" />
-            <OnboardingStep done={debts.length > 0} href="/new-debt" label="Cadastrar divida" />
-            <OnboardingStep done={chargeLogs.length > 0} href="/debtors?filter=open" label="Mandar cobranca" />
-          </div>
-        </section>
+      {showPwaPrompt && typeof document !== "undefined" && createPortal(
+        <PwaInstallModal
+          onClose={dismissPwaPrompt}
+          onInstall={handleInstallPwa}
+          titleId={pwaPromptTitleId}
+          isIOS={pwa.isIOS}
+        />,
+        document.body,
       )}
 
-      {notifications.canAsk && !notifications.promptDismissed && !notifications.dailyRemindersEnabled && (
-        <section className="card rounded-[18px] p-4 space-y-4">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center shrink-0">
-              <Bell size={18} strokeWidth={2} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <h2 className="font-semibold text-sm text-gray-900">Receber avisos as 8h?</h2>
-              <p className="text-xs text-gray-400 mt-1">Quando houver recebimento para amanha, o Me Pague te avisa.</p>
-            </div>
-            <button
-              type="button"
-              onClick={notifications.dismissPrompt}
-              className="w-8 h-8 rounded-full bg-gray-50 text-gray-400 flex items-center justify-center btn-press"
-              aria-label="Ocultar convite de notificacoes"
-            >
-              <X size={15} />
-            </button>
-          </div>
-          <button
-            type="button"
-            onClick={handleEnableNotifications}
-            disabled={notifications.saving}
-            className="w-full rounded-xl bg-gray-900 text-white py-3 text-sm font-semibold disabled:opacity-50 btn-press"
-          >
-            {notifications.saving ? "Ativando..." : "Ativar notificacoes"}
-          </button>
-        </section>
+      {showNotificationPrompt && typeof document !== "undefined" && createPortal(
+        <NotificationPermissionModal
+          onClose={dismissNotificationPrompt}
+          onEnable={handleEnableNotifications}
+          saving={notifications.saving}
+          titleId={notificationPromptTitleId}
+        />,
+        document.body,
+      )}
+
+      {showOnboarding && typeof document !== "undefined" && createPortal(
+        <OnboardingWizard
+          userName={profile?.name}
+          onComplete={() => setOnboardingCompleted(true)}
+        />,
+        document.body,
       )}
 
       <section className="bg-white rounded-[2rem] p-8 border border-gray-100 shadow-ios space-y-6">
@@ -241,7 +304,7 @@ export default function Dashboard() {
 
       <section className="space-y-4">
         <div className="flex justify-between items-center px-1">
-          <h3 className="text-lg font-bold text-black">Cobrancas Recentes</h3>
+          <h3 className="text-lg font-bold text-black">Cobranças Recentes</h3>
           <Link href="/debtors" className="text-ios-blue text-sm font-semibold flex items-center gap-0.5">
             Ver tudo <ArrowRight size={14} />
           </Link>
@@ -249,8 +312,8 @@ export default function Dashboard() {
 
         {recentDebts.length === 0 ? (
           <div className="ios-tile p-6 bg-white text-center">
-            <p className="font-semibold text-gray-900">Nenhuma divida cadastrada</p>
-            <p className="text-sm text-ios-gray mt-1">Cadastre a primeira cobranca para acompanhar seus recebimentos.</p>
+            <p className="font-semibold text-gray-900">Nenhuma dívida cadastrada</p>
+            <p className="text-sm text-ios-gray mt-1">Cadastre a primeira cobrança para acompanhar seus recebimentos.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -285,19 +348,168 @@ export default function Dashboard() {
   );
 }
 
-function OnboardingStep({ done, href, label }: { done: boolean; href: string; label: string }) {
+function PwaInstallModal({
+  onClose,
+  onInstall,
+  titleId,
+  isIOS,
+}: {
+  onClose: () => void;
+  onInstall: () => void;
+  titleId: string;
+  isIOS?: boolean;
+}) {
+  const descriptionId = `${titleId}-description`;
+
   return (
-    <Link
-      href={href}
-      className={`p-3 rounded-xl text-center text-xs font-semibold ${
-        done ? "bg-green-50 text-green-600" : "bg-gray-50 text-gray-600"
-      }`}
-    >
-      <span className="block text-base">{done ? "OK" : "+"}</span>
-      {label}
-    </Link>
+    <div className="app-modal z-[110]">
+      <button type="button" aria-label="Fechar instalação do app" className="app-modal__backdrop" onClick={onClose} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        className="app-modal__panel relative w-full max-w-sm rounded-[1.4rem] bg-white p-5 shadow-2xl"
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl bg-gray-50 text-gray-400 btn-press"
+          aria-label="Fechar"
+        >
+          <X size={17} />
+        </button>
+
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-ios-blue">
+          <Smartphone size={24} strokeWidth={2.2} />
+        </div>
+
+        {isIOS ? (
+          <div className="mt-4 space-y-4 text-center">
+            <h2 id={titleId} className="text-xl font-bold text-gray-950">
+              Instalar no iPhone
+            </h2>
+            <div id={descriptionId} className="text-left text-sm text-gray-600 space-y-3 bg-gray-50 p-4 rounded-2xl">
+              <p className="flex gap-2">
+                <span className="flex-shrink-0 flex items-center justify-center w-5 h-5 bg-gray-200 text-gray-800 text-[11px] font-bold rounded-full">1</span>
+                <span>Toque no botão de <strong>Compartilhar</strong> (ícone na barra inferior do Safari).</span>
+              </p>
+              <p className="flex gap-2">
+                <span className="flex-shrink-0 flex items-center justify-center w-5 h-5 bg-gray-200 text-gray-800 text-[11px] font-bold rounded-full">2</span>
+                <span>Role a lista e selecione <strong>Adicionar à Tela de Início</strong>.</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full flex min-h-12 items-center justify-center rounded-xl bg-gray-900 px-3 text-sm font-semibold text-white btn-press mt-2"
+            >
+              Entendido
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="mt-4 space-y-2 text-center">
+              <h2 id={titleId} className="text-xl font-bold text-gray-950">
+                Adicionar atalho?
+              </h2>
+              <p id={descriptionId} className="mx-auto max-w-[17rem] text-sm leading-5 text-gray-500">
+                Instale o Me Pague na área de trabalho ou na tela inicial do seu celular para acesso rápido e offline.
+              </p>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex min-h-12 items-center justify-center rounded-xl bg-gray-50 px-3 text-sm font-semibold text-gray-600 btn-press"
+              >
+                Agora não
+              </button>
+              <button
+                type="button"
+                onClick={onInstall}
+                className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-gray-900 px-3 text-sm font-semibold text-white btn-press"
+              >
+                <Smartphone size={16} strokeWidth={2.3} />
+                Adicionar
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
+
+function NotificationPermissionModal({
+  onClose,
+  onEnable,
+  saving,
+  titleId,
+}: {
+  onClose: () => void;
+  onEnable: () => void;
+  saving: boolean;
+  titleId: string;
+}) {
+  const descriptionId = `${titleId}-description`;
+
+  return (
+    <div className="app-modal z-[110]">
+      <button type="button" aria-label="Fechar convite de notificações" className="app-modal__backdrop" onClick={onClose} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        className="app-modal__panel relative w-full max-w-sm rounded-[1.4rem] bg-white p-5 shadow-2xl"
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl bg-gray-50 text-gray-400 btn-press"
+          aria-label="Agora não"
+        >
+          <X size={17} />
+        </button>
+
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-50 text-orange-500">
+          <Bell size={24} strokeWidth={2.2} />
+        </div>
+
+        <div className="mt-4 space-y-2 text-center">
+          <h2 id={titleId} className="text-xl font-bold text-gray-950">
+            Receber avisos às 8h?
+          </h2>
+          <p id={descriptionId} className="mx-auto max-w-[17rem] text-sm leading-5 text-gray-500">
+            Quando houver recebimento para amanhã, o Me Pague te avisa.
+          </p>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex min-h-12 items-center justify-center rounded-xl bg-gray-50 px-3 text-sm font-semibold text-gray-600 btn-press"
+          >
+            Agora não
+          </button>
+          <button
+            type="button"
+            onClick={onEnable}
+            disabled={saving}
+            className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-gray-900 px-3 text-sm font-semibold text-white disabled:opacity-50 btn-press"
+          >
+            <Bell size={16} strokeWidth={2.3} />
+            {saving ? "Ativando..." : "Ativar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function ShortcutLink({
   bg,

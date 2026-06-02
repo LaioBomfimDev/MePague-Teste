@@ -35,7 +35,7 @@ import {
 import type { DebtWithCustomer, MessageTone } from "@/lib/types";
 
 const toneOptions: Array<{ value: MessageTone; label: string }> = [
-  { value: "friendly", label: "Amigavel" },
+  { value: "friendly", label: "Amigável" },
   { value: "firm", label: "Firme" },
   { value: "overdue", label: "Atraso" },
 ];
@@ -146,7 +146,7 @@ export default function DebtorDetailPage() {
           }),
         ),
       );
-      setToast("Todas as cobrancas foram marcadas como pagas.");
+      setToast("Todas as cobranças foram marcadas como pagas.");
       window.setTimeout(() => setToast(""), 2400);
     } finally {
       setBusyDebtId(null);
@@ -175,7 +175,7 @@ export default function DebtorDetailPage() {
         <MobileHeader title="Devedor" fallbackHref="/debtors" />
         <div className="card rounded-[18px] p-6 text-center">
           <p className="font-semibold text-gray-900">Nada encontrado por aqui</p>
-          <p className="text-sm text-gray-400 mt-1">Esse devedor nao possui cobrancas cadastradas.</p>
+          <p className="text-sm text-gray-400 mt-1">Esse devedor não possui cobranças cadastradas.</p>
         </div>
       </div>
     );
@@ -292,7 +292,7 @@ export default function DebtorDetailPage() {
                   <p className="font-semibold text-sm text-gray-900">{group.description}</p>
                   <p className="text-xs text-gray-400 mt-0.5">
                     {group.paid}/{group.total} parcelas pagas
-                    {group.nextDebt ? ` · proxima ${formatDate(group.nextDebt.dueDate)}` : ""}
+                    {group.nextDebt ? ` · próxima ${formatDate(group.nextDebt.dueDate)}` : ""}
                   </p>
                 </div>
                 <p className="font-semibold text-sm text-gray-900">{formatCurrency(group.outstanding)}</p>
@@ -336,7 +336,7 @@ export default function DebtorDetailPage() {
       <DebtSection
         title="Em aberto"
         debts={openDebts}
-        empty="Nenhuma cobranca em aberto."
+        empty="Nenhuma cobrança em aberto."
         busyDebtId={busyDebtId}
         editingDebtId={editingDebtId}
         onEdit={setEditingDebtId}
@@ -417,7 +417,7 @@ function DebtSection({
                 onMarkPaid={() => onPay(debt)}
                 onReopen={() => userId && onAction(debt.id, () => markDebtAsOpen(userId, debt.id))}
                 onDelete={() => {
-                  if (!userId || !window.confirm("Excluir esta cobranca?")) return;
+                  if (!userId || !window.confirm("Excluir esta cobrança?")) return;
                   void onAction(debt.id, () => deleteDebt(userId, debt.id));
                 }}
                 pixKey={pixKey}
@@ -458,7 +458,7 @@ function DebtCard({
     <div className="card rounded-[14px] p-4 space-y-3">
       <div className="flex justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-semibold text-sm text-gray-900 truncate">{debt.description || "Cobranca sem descricao"}</p>
+          <p className="font-semibold text-sm text-gray-900 truncate">{debt.description || "Cobrança sem descrição"}</p>
           <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
             <CalendarClock size={13} />
             {formatDate(debt.dueDate)} · {getDebtTimingLabel(debt)}
@@ -620,12 +620,17 @@ function PaymentModal({
     }
 
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = "";
+    };
   }, [onClose]);
 
   async function handleSubmit() {
     if (!parsedAmount || parsedAmount <= 0 || parsedAmount > debt.outstandingAmount) {
-      setError("Informe um valor valido para este pagamento.");
+      setError("Informe um valor válido para este pagamento.");
       return;
     }
 
@@ -642,8 +647,8 @@ function PaymentModal({
       });
       onSaved?.();
       onClose();
-    } catch {
-      setError("Nao foi possivel registrar o pagamento.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível registrar o pagamento.");
     } finally {
       setSaving(false);
     }
@@ -693,7 +698,7 @@ function PaymentModal({
         )}
 
         <label className="block space-y-1">
-          <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Observacao</span>
+          <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Observação</span>
           <input
             value={note}
             onChange={(event) => setNote(event.target.value)}
@@ -739,7 +744,7 @@ function CustomerEditForm({
     event.preventDefault();
 
     if (!name.trim() || normalizePhone(phone).length < 10) {
-      setError("Informe nome e telefone validos.");
+      setError("Informe nome e telefone válidos.");
       return;
     }
 
@@ -753,7 +758,7 @@ function CustomerEditForm({
       });
       onCancel();
     } catch {
-      setError("Nao foi possivel atualizar o devedor.");
+      setError("Não foi possível atualizar o devedor.");
     } finally {
       setSaving(false);
     }

@@ -25,8 +25,10 @@ const env = {
 
 const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY;
-const email = env.SUPERADMIN_EMAIL || env.NEXT_PUBLIC_SUPERADMIN_EMAIL || "superadm@mepague.app";
+const email = env.SUPERADMIN_EMAIL || env.NEXT_PUBLIC_SUPERADMIN_EMAIL || "laiolindowow10@gmail.com";
+const adminName = env.SUPERADMIN_NAME || email;
 const password = env.SUPERADMIN_PASSWORD || "654321";
+const legacyEmail = env.LEGACY_SUPERADMIN_EMAIL || "superadm@mepague.app";
 
 if (!supabaseUrl || !serviceRoleKey) {
   console.error("Defina NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY em .env.local antes de rodar.");
@@ -39,6 +41,10 @@ const admin = createClient(supabaseUrl, serviceRoleKey, {
     persistSession: false,
   },
 });
+
+function sameEmail(left, right) {
+  return left.trim().toLowerCase() === right.trim().toLowerCase();
+}
 
 async function findUserByEmail(targetEmail) {
   let page = 1;
@@ -57,17 +63,20 @@ async function findUserByEmail(targetEmail) {
 }
 
 const existingUser = await findUserByEmail(email);
-const userResult = existingUser
-  ? await admin.auth.admin.updateUserById(existingUser.id, {
+const legacyUser = !sameEmail(email, legacyEmail) ? await findUserByEmail(legacyEmail) : null;
+const userToUpdate = existingUser || legacyUser;
+const userResult = userToUpdate
+  ? await admin.auth.admin.updateUserById(userToUpdate.id, {
+      email,
       password,
       email_confirm: true,
-      user_metadata: { ...(existingUser.user_metadata || {}), name: "superadm" },
+      user_metadata: { ...(userToUpdate.user_metadata || {}), name: adminName },
     })
   : await admin.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
-      user_metadata: { name: "superadm" },
+      user_metadata: { name: adminName },
     });
 
 if (userResult.error) {
@@ -75,21 +84,26 @@ if (userResult.error) {
 }
 
 const user = userResult.data.user;
+const now = new Date().toISOString();
 
 if (!user) {
-  throw new Error("Supabase nao retornou o usuario superadm.");
+  throw new Error("Supabase nao retornou o usuario administrador.");
 }
 
 const { error: profileError } = await admin.from("profiles").upsert(
   {
     id: user.id,
-    name: "superadm",
+    name: adminName,
     email,
     pix_key: "",
     plan: "pro",
     role: "superadmin",
     status: "active",
-    updated_at: new Date().toISOString(),
+    status_reason: "",
+    status_changed_at: now,
+    status_changed_by: null,
+    deleted_at: null,
+    updated_at: now,
   },
   { onConflict: "id" },
 );
@@ -98,14 +112,62 @@ if (profileError) {
   throw profileError;
 }
 
+if (legacyUser && legacyUser.id !== user.id) {
+  const { error: deleteLegacyProfileError } = await admin.from("profiles").delete().eq("id", legacyUser.id);
+
+  if (deleteLegacyProfileError) {
+    throw deleteLegacyProfileError;
+  }
+
+  const { error: deleteLegacyAuthError } = await admin.auth.admin.deleteUser(legacyUser.id, true);
+
+  if (deleteLegacyAuthError) {
+    const { error: disableLegacyAuthError } = await admin.auth.admin.updateUserById(legacyUser.id, {
+      ban_duration: "876000h",
+      user_metadata: { ...(legacyUser.user_metadata || {}), name: "deleted" },
+    });
+
+    if (disableLegacyAuthError) {
+      throw deleteLegacyAuthError;
+    }
+  }
+}
+
+const { error: staleLegacyProfileError } = await admin
+  .from("profiles")
+  .delete()
+  .eq("email", legacyEmail)
+  .neq("id", user.id);
+
+if (staleLegacyProfileError) {
+  throw staleLegacyProfileError;
+}
+
+const { error: extraAdminError } = await admin
+  .from("profiles")
+  .update({
+    role: "user",
+    status: "inactive",
+    status_reason: "Administrador removido para manter apenas uma conta admin",
+    status_changed_at: now,
+    status_changed_by: user.id,
+    updated_at: now,
+  })
+  .in("role", ["admin", "superadmin"])
+  .neq("id", user.id);
+
+if (extraAdminError) {
+  throw extraAdminError;
+}
+
 await admin.from("audit_logs").insert({
   actor_id: user.id,
   actor_email: email,
   target_user_id: user.id,
-  action: existingUser ? "admin.superadmin_updated" : "admin.superadmin_created",
+  action: userToUpdate ? "admin.superadmin_updated" : "admin.superadmin_created",
   table_name: "admin",
-  metadata: { source: "bootstrap-superadmin" },
+  metadata: { source: "bootstrap-superadmin", migratedFrom: legacyUser?.email || null },
 });
 
 console.log(`Superadm pronto: ${email}`);
-console.log("Login rapido no app: superadm");
+console.log(`Login no app: ${email}`);

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { requireAuthenticatedUser, userApiErrorResponse } from "@/lib/api-auth";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import type { UserProfile, UserRole, UserStatus } from "@/lib/types";
 
 type ProfileRow = {
@@ -145,6 +146,20 @@ async function activatePendingSelfServiceProfile(admin: SupabaseClient, userId: 
 
 export async function POST(request: NextRequest) {
   try {
+    // Rate limit: 20 requisições por minuto por IP
+    const ip = getClientIp(request);
+    const rl = checkRateLimit(`auth-profile:${ip}`, 20, 60_000);
+
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Muitas requisicoes. Tente novamente em breve." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rl.retryAfterSeconds ?? 60) },
+        },
+      );
+    }
+
     const { admin, user } = await requireAuthenticatedUser(request);
     let profile = await fetchProfile(admin, user.id);
 

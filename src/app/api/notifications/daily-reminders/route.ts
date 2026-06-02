@@ -55,9 +55,8 @@ function requireCronAccess(request: NextRequest) {
   }
 
   const authorization = request.headers.get("authorization") || "";
-  const querySecret = request.nextUrl.searchParams.get("secret") || "";
 
-  if (authorization === `Bearer ${secret}` || querySecret === secret) {
+  if (authorization === `Bearer ${secret}`) {
     return;
   }
 
@@ -94,7 +93,14 @@ function getTargetDate(request: NextRequest) {
   const requested = request.nextUrl.searchParams.get("targetDate") || "";
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(requested)) {
-    return requested;
+    // Limita a janela de ±2 dias para evitar abuso com datas arbitrárias
+    const requestedTime = new Date(requested + "T00:00:00Z").getTime();
+    const nowTime = Date.now();
+    const twoDaysMs = 2 * 24 * 60 * 60 * 1000;
+
+    if (Math.abs(requestedTime - nowTime) <= twoDaysMs) {
+      return requested;
+    }
   }
 
   return getTomorrowDateInTimeZone(TIMEZONE);

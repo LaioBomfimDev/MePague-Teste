@@ -53,5 +53,6 @@ export function userApiErrorResponse(error: unknown) {
   }
 
   const message = error instanceof Error ? error.message : "Erro interno.";
+  console.error("API Error (500):", error);
   return NextResponse.json({ error: message }, { status: 500 });
 }

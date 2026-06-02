@@ -300,7 +300,9 @@ function createLocalId(prefix: string) {
 }
 
 function createRealtimeChannelName(prefix: string, ...parts: string[]) {
-  return [prefix, ...parts, createLocalId("sub")].join(":");
+  // Usa nome determinístico para evitar acumular canais se o componente re-renderizar.
+  // O cleanup via supabase.removeChannel() no unsubscribe garante idempotência.
+  return [prefix, ...parts].join(":");
 }
 
 function getUserDisplayName(user: User) {
@@ -755,12 +757,17 @@ export async function updateUserProfile(uid: string, data: Pick<UserProfile, "na
   if (error) throw error;
 }
 
-export function subscribeCustomers(uid: string, callback: (customers: Customer[]) => void): Unsubscribe {
+export function subscribeCustomers(uid: string, callback: (customers: Customer[]) => void, onError?: (error: unknown) => void): Unsubscribe {
   if (isDemoUid(uid)) {
     return subscribeDemoStore(callback, (store) => store.customers);
   }
 
-  fetchCustomers(uid).then(callback).catch(() => callback([]));
+  fetchCustomers(uid)
+    .then(callback)
+    .catch((error) => {
+      onError?.(error);
+      callback([]);
+    });
 
   const channel = supabase
     .channel(createRealtimeChannelName("customers", uid))
@@ -774,12 +781,17 @@ export function subscribeCustomers(uid: string, callback: (customers: Customer[]
   };
 }
 
-export function subscribeDebts(uid: string, callback: (debts: Debt[]) => void): Unsubscribe {
+export function subscribeDebts(uid: string, callback: (debts: Debt[]) => void, onError?: (error: unknown) => void): Unsubscribe {
   if (isDemoUid(uid)) {
     return subscribeDemoStore(callback, (store) => store.debts);
   }
 
-  fetchDebts(uid).then(callback).catch(() => callback([]));
+  fetchDebts(uid)
+    .then(callback)
+    .catch((error) => {
+      onError?.(error);
+      callback([]);
+    });
 
   const channel = supabase
     .channel(createRealtimeChannelName("debts", uid))
@@ -793,12 +805,17 @@ export function subscribeDebts(uid: string, callback: (debts: Debt[]) => void): 
   };
 }
 
-export function subscribePayments(uid: string, callback: (payments: Payment[]) => void): Unsubscribe {
+export function subscribePayments(uid: string, callback: (payments: Payment[]) => void, onError?: (error: unknown) => void): Unsubscribe {
   if (isDemoUid(uid)) {
     return subscribeDemoStore(callback, (store) => store.payments || []);
   }
 
-  fetchPayments(uid).then(callback).catch(() => callback([]));
+  fetchPayments(uid)
+    .then(callback)
+    .catch((error) => {
+      onError?.(error);
+      callback([]);
+    });
 
   const channel = supabase
     .channel(createRealtimeChannelName("payments", uid))
@@ -812,12 +829,17 @@ export function subscribePayments(uid: string, callback: (payments: Payment[]) =
   };
 }
 
-export function subscribeChargeLogs(uid: string, callback: (chargeLogs: ChargeLog[]) => void): Unsubscribe {
+export function subscribeChargeLogs(uid: string, callback: (chargeLogs: ChargeLog[]) => void, onError?: (error: unknown) => void): Unsubscribe {
   if (isDemoUid(uid)) {
     return subscribeDemoStore(callback, (store) => store.chargeLogs || []);
   }
 
-  fetchChargeLogs(uid).then(callback).catch(() => callback([]));
+  fetchChargeLogs(uid)
+    .then(callback)
+    .catch((error) => {
+      onError?.(error);
+      callback([]);
+    });
 
   const channel = supabase
     .channel(createRealtimeChannelName("charge_logs", uid))
@@ -914,28 +936,15 @@ export async function recordPayment(
     return;
   }
 
-  const { error: paymentError } = await supabase.from("payments").insert({
-    user_id: uid,
-    debt_id: input.debtId,
-    customer_id: input.customerId,
-    amount: input.amount,
-    note: input.note || "",
-    paid_at: now,
+  const { error } = await supabase.rpc("record_payment_atomic", {
+    p_debt_id: input.debtId,
+    p_user_id: uid,
+    p_customer_id: input.customerId,
+    p_amount: input.amount,
+    p_note: input.note || "",
   });
 
-  if (paymentError) throw paymentError;
-
-  const { error: debtError } = await supabase
-    .from("debts")
-    .update({
-      status: nextStatus,
-      paid_at: nextStatus === "paid" ? now : null,
-      updated_at: now,
-    })
-    .eq("id", input.debtId)
-    .eq("user_id", uid);
-
-  if (debtError) throw debtError;
+  if (error) throw error;
 }
 
 export async function recordChargeLog(

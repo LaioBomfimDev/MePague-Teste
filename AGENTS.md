@@ -138,6 +138,14 @@ SimpleCov deve ser usado como criterio de cobertura dentro da suite de testes Ru
 - Correcoes aplicadas: `src/lib/database.ts` passou a ter carregamento agregado em `loadAppData` e uma unica subscription em `subscribeAppData` com debounce; `src/hooks/useAppData.ts` passou a expor `AppDataProvider` unico para o app; `src/components/AppShell.tsx` e `src/components/BottomNav.tsx` passaram a usar o provider compartilhado em vez de abrir outra subscription de perfil; `src/components/AuthProvider.tsx` reduziu validacao duplicada de sessao e ganhou protecao contra carregamento travado; `src/lib/supabase.ts` ganhou nova `storageKey` para quebrar sessao antiga; `next.config.mjs` ganhou headers `no-store` nas rotas do app.
 - Validacao: medir o Supabase real sem expor secrets para confirmar tamanho/latencia das tabelas; rodar `npm run build`; iniciar servidor local e rodar `SMOKE_BASE_URL=http://127.0.0.1:<porta> npm run smoke`; confirmar que as rotas protegidas e publicas respondem sem abrir multiplas subscriptions por componente.
 
+### 2026-05-31 - Porta local fixa para producao
+
+- Problema: o OAuth do Google/Supabase estava voltando para portas diferentes, especialmente `localhost:3000`, que pode pertencer a outra plataforma no computador. Isso quebrava o login com Google mesmo quando email/senha funcionava.
+- Risco: misturar portas de producao local, desenvolvimento e teste causa callbacks incorretos no Supabase, origens erradas no Google Cloud e sessoes presas em outro app.
+- Regra nova: a porta local de producao do Me Pague e sempre `3033`. Use `http://localhost:3033` ou `http://127.0.0.1:3033` para validar producao local, Supabase Redirect URLs e Google Authorized JavaScript origins. Nao use `3033` para `next dev`, testes temporarios ou outros apps.
+- Ambiente de teste/desenvolvimento: use outra porta, preferencialmente `3034` para testes locais temporarios. Se precisar usar `next dev`, mantenha separado da producao local e lembre que `next dev` pode invalidar a pasta `.next`; rode `npm run build` novamente antes de `next start` em `3033`.
+- Validacao: iniciar producao local com `next start -p 3033 --hostname 0.0.0.0`; confirmar `http://localhost:3033/login` e `http://127.0.0.1:3033/login`; rodar `SMOKE_BASE_URL=http://127.0.0.1:3033 npm run smoke`.
+
 ## Checklist de conclusao
 
 Antes de finalizar uma tarefa, confirme:

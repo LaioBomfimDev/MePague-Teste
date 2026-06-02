@@ -1,9 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAuthenticatedUser, userApiErrorResponse, UserApiError } from "@/lib/api-auth";
+import { checkRateLimit } from "@/lib/rate-limit";
 import type { StoredPushSubscription } from "@/lib/web-push";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+const MAX_SUBSCRIPTIONS_PER_USER = 10;
 
 function parseSubscription(value: unknown): StoredPushSubscription {
   const subscription = value as Partial<StoredPushSubscription> | null;
@@ -32,10 +35,54 @@ function parseSubscription(value: unknown): StoredPushSubscription {
 export async function POST(request: NextRequest) {
   try {
     const { admin, user } = await requireAuthenticatedUser(request);
-    const body = await request.json();
+
+    // Rate limit: 5 registros de subscription por minuto por usuário
+    const rl = checkRateLimit(`subscriptions-post:${user.id}`, 5, 60_000);
+
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Muitas requisicoes. Tente novamente em breve." },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds ?? 60) } },
+      );
+    }
+
+    const body = await request.json().catch(() => null);
+    if (!body) {
+      throw new UserApiError("Corpo da requisição inválido ou ausente.", 400);
+    }
     const subscription = parseSubscription(body.subscription);
     const userAgent = request.headers.get("user-agent") || "";
     const now = new Date().toISOString();
+
+    // Verifica o número de subscriptions ativas do usuário
+    const { count: activeCount, error: countError } = await admin
+      .from("push_subscriptions")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("is_active", true);
+
+    if (countError) throw countError;
+
+    // Se já tem muitas, desativa as mais antigas (exceto a atual)
+    if ((activeCount ?? 0) >= MAX_SUBSCRIPTIONS_PER_USER) {
+      const { data: oldest, error: oldestError } = await admin
+        .from("push_subscriptions")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("is_active", true)
+        .order("last_seen_at", { ascending: true })
+        .limit((activeCount ?? MAX_SUBSCRIPTIONS_PER_USER) - MAX_SUBSCRIPTIONS_PER_USER + 1);
+
+      if (oldestError) throw oldestError;
+
+      if (oldest && oldest.length > 0) {
+        const idsToDeactivate = oldest.map((row: { id: string }) => row.id);
+        await admin
+          .from("push_subscriptions")
+          .update({ is_active: false, updated_at: now })
+          .in("id", idsToDeactivate);
+      }
+    }
 
     const { error: subscriptionError } = await admin.from("push_subscriptions").upsert(
       {
@@ -71,6 +118,7 @@ export async function POST(request: NextRequest) {
       dailyRemindersEnabled: true,
       hasSubscription: true,
       reminderDaysBefore: 1,
+      timezone: "America/Sao_Paulo",
     });
   } catch (error) {
     return userApiErrorResponse(error);

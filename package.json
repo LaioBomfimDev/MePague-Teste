@@ -10,6 +10,7 @@
     "test:auth-registration": "node scripts/check-auth-registration-flow.mjs",
     "test:debt-ui": "node scripts/check-debt-presentation.mjs",
     "smoke": "node scripts/smoke-routes.mjs",
+    "test:notifications": "node scripts/check-notifications-flow.mjs",
     "start": "next start",
     "lint": "next lint"
   },

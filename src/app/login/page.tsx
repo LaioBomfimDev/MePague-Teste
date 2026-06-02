@@ -227,10 +227,10 @@ export default function LoginPage() {
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             required
-            type={mode === "register" ? "email" : "text"}
+            type="email"
             autoCapitalize="none"
             autoCorrect="off"
-            placeholder={mode === "register" ? "email@exemplo.com" : "email ou superadm"}
+            placeholder="email@exemplo.com"
             className="w-full pl-11 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-ios-blue/20"
           />
         </label>

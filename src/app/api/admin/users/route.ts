@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { adminErrorResponse, AdminApiError, requireSuperAdmin, writeAdminAuditLog } from "@/lib/admin-auth";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import type { AdminUserSummary, RiskLevel, UserRole, UserStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -281,6 +282,17 @@ async function loadUserSummaries(admin: SupabaseClient): Promise<{ schemaReady: 
 
 export async function GET(request: NextRequest) {
   try {
+    // Rate limit: 30 requisições por minuto por IP
+    const ip = getClientIp(request);
+    const rl = checkRateLimit(`admin-users-get:${ip}`, 30, 60_000);
+
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Muitas requisicoes. Tente novamente em breve." },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds ?? 60) } },
+      );
+    }
+
     const context = await requireSuperAdmin(request);
     const result = await loadUserSummaries(context.admin);
     const statusWeight: Record<UserStatus, number> = {
@@ -310,6 +322,17 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Rate limit: 10 criações por minuto por IP
+    const ip = getClientIp(request);
+    const rl = checkRateLimit(`admin-users-post:${ip}`, 10, 60_000);
+
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Muitas requisicoes. Tente novamente em breve." },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds ?? 60) } },
+      );
+    }
+
     const context = await requireSuperAdmin(request);
     const body = await request.json();
     const email = asString(body.email).toLowerCase();
@@ -447,8 +470,21 @@ export async function PATCH(request: NextRequest) {
       throw new AdminApiError("Nenhuma alteracao informada.");
     }
 
-    if (userIds.includes(context.actor.id) && (updates.role !== "superadmin" || updates.status !== "active")) {
-      throw new AdminApiError("Voce nao pode remover seu proprio acesso de superadm.");
+    // Proteção de auto-modificação: superadmin não pode remover seu próprio acesso
+    const isSelf = userIds.includes(context.actor.id);
+
+    if (isSelf) {
+      if (role && role !== "superadmin") {
+        throw new AdminApiError("Voce nao pode remover seu proprio papel de superadmin.");
+      }
+
+      if (status && status !== "active") {
+        throw new AdminApiError("Voce nao pode desativar ou excluir sua propria conta.");
+      }
+
+      if (action === "delete") {
+        throw new AdminApiError("Voce nao pode excluir sua propria conta.");
+      }
     }
 
     const { error } = await context.admin.from("profiles").update(updates).in("id", userIds);

@@ -210,7 +210,7 @@ declare
   changed_user_id uuid;
 begin
   if tg_op = 'DELETE' then
-    changed_record_id := old.id::text;
+    changed_record_id := coalesce(to_jsonb(old)->>'id', to_jsonb(old)->>'user_id');
 
     if tg_table_name = 'profiles' then
       changed_user_id := old.id;
@@ -218,7 +218,7 @@ begin
       changed_user_id := old.user_id;
     end if;
   else
-    changed_record_id := new.id::text;
+    changed_record_id := coalesce(to_jsonb(new)->>'id', to_jsonb(new)->>'user_id');
 
     if tg_table_name = 'profiles' then
       changed_user_id := new.id;
