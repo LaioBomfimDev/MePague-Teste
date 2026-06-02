@@ -1,10 +1,8 @@
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const CACHE_NAME = `me-pague-${CACHE_VERSION}`;
 
-// Assets estáticos para cachear no install
+// Assets estaticos seguros para cachear no install
 const PRECACHE_ASSETS = [
-  "/",
-  "/login",
   "/logo.jpeg",
   "/manifest.json",
   "/icons/icon-192.png",
@@ -37,22 +35,27 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Estratégia: network-first com fallback para cache
+function isCacheableAsset(url) {
+  return url.pathname.startsWith("/icons/") || url.pathname === "/logo.jpeg" || url.pathname === "/manifest.json";
+}
+
+// Estrategia: network-first com fallback para cache apenas em assets estaticos.
+// Paginas e rotas autenticadas precisam ir sempre para a rede/Next.
 self.addEventListener("fetch", (event) => {
-  // Só intercepta requisições GET de mesma origem
+  // So intercepta requisicoes GET de mesma origem
   if (event.request.method !== "GET") return;
 
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
 
-  // API routes: nunca interceptar (sempre vai para a rede)
-  if (url.pathname.startsWith("/api/")) return;
+  if (event.request.mode === "navigate" || event.request.destination === "document") return;
+  if (!isCacheableAsset(url)) return;
 
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Cacheia a resposta bem-sucedida de assets estáticos
-        if (response.ok && (url.pathname.startsWith("/icons/") || url.pathname === "/logo.jpeg")) {
+        // Cacheia a resposta bem-sucedida de assets estaticos
+        if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
