@@ -1,12 +1,11 @@
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const CACHE_NAME = `me-pague-${CACHE_VERSION}`;
 
 // Assets estaticos seguros para cachear no install
 const PRECACHE_ASSETS = [
   "/logo.jpeg",
   "/manifest.json",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
+  "/icons/icon.svg",
 ];
 
 // Instala o SW e pré-cacheia os assets essenciais

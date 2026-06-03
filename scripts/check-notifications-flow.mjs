@@ -18,7 +18,7 @@ const notificationModal = dashboard.slice(notificationModalStart);
 assert.match(notificationModal, /createPortal|app-modal/, "Notification prompt must use the app modal surface.");
 assert.match(notificationModal, /role="dialog"/, "Notification prompt must expose a dialog role.");
 assert.match(notificationModal, /aria-modal="true"/, "Notification prompt must be announced as modal.");
-assert.match(notificationModal, /Receber avisos as 8h\?/, "Notification prompt copy must still be present.");
+assert.match(notificationModal, /Receber avisos (as|às) 8h\?/, "Notification prompt copy must still be present.");
 
 assert.match(subscriptionsRoute, /timezone:\s*"America\/Sao_Paulo"/, "Subscription response must include timezone.");
 assert.doesNotMatch(schema, /changed_record_id := (old|new)\.id::text;/, "Audit trigger must not assume every table has id.");
