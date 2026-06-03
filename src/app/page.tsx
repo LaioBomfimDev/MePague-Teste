@@ -202,7 +202,7 @@ export default function Dashboard() {
         document.body,
       )}
 
-      <section className="bg-white rounded-[2rem] p-8 border border-gray-100 shadow-ios space-y-6">
+      <section className="bg-white rounded-[2rem] p-8 border border-gray-100 shadow-ios space-y-6 animate-emerge stagger-1">
         <div>
           <p className="text-[13px] font-semibold text-ios-gray uppercase tracking-tight">Total a receber</p>
           <div className="flex items-baseline gap-1 mt-1">
@@ -234,7 +234,7 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <section className="grid grid-cols-4 gap-3">
+      <section className="grid grid-cols-4 gap-3 animate-emerge stagger-2">
         <ShortcutLink href="/new-debt" label="Nova" icon={Plus} bg="bg-gray-900" color="text-white" />
         <ShortcutLink href="/debtors?filter=overdue" label="Atrasadas" icon={AlertCircle} bg="bg-red-50" color="text-red-500" />
         <ShortcutLink href="/debtors?filter=due-today" label="Hoje" icon={CalendarClock} bg="bg-green-50" color="text-green-600" />

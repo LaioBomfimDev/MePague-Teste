@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { ArrowRight, Bell, Check, Sparkles, Key, DollarSign, ArrowLeft, AlertCircle } from "lucide-react";
+import { useState, useMemo, type FormEvent } from "react";
+import { ArrowRight, Bell, Check, Key, DollarSign, ArrowLeft, AlertCircle, Smartphone, Download, Share } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { usePwaInstall } from "@/hooks/usePwaInstall";
 import { updateUserProfile, createDebtWithCustomer } from "@/lib/database";
 import { formatPhoneInput, formatCurrencyInput, parseCurrencyInput } from "@/lib/format";
 
@@ -15,6 +16,7 @@ type OnboardingWizardProps = {
 export default function OnboardingWizard({ userName, onComplete }: OnboardingWizardProps) {
   const { user } = useAuth();
   const notifications = usePushNotifications();
+  const pwa = usePwaInstall();
   
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -30,14 +32,39 @@ export default function OnboardingWizard({ userName, onComplete }: OnboardingWiz
   const [debtAmount, setDebtAmount] = useState("");
   const [debtDueDate, setDebtDueDate] = useState("");
 
+  const stepsArray = useMemo(() => {
+    const list = [1, 2, 3, 4];
+    if (pwa.supported) {
+      list.push(5);
+    }
+    list.push(6);
+    return list;
+  }, [pwa.supported]);
+
   const handleNextStep = () => {
     setError("");
-    setStep((prev) => prev + 1);
+    if (step === 4) {
+      if (pwa.supported) {
+        setStep(5);
+      } else {
+        setStep(6);
+      }
+    } else {
+      setStep((prev) => prev + 1);
+    }
   };
 
   const handlePrevStep = () => {
     setError("");
-    setStep((prev) => Math.max(1, prev - 1));
+    if (step === 6) {
+      if (pwa.supported) {
+        setStep(5);
+      } else {
+        setStep(4);
+      }
+    } else {
+      setStep((prev) => Math.max(1, prev - 1));
+    }
   };
 
   // Salvar Chave Pix (Etapa 2)
@@ -138,7 +165,7 @@ export default function OnboardingWizard({ userName, onComplete }: OnboardingWiz
         
         {/* Indicador de Etapas */}
         <div className="px-6 pt-6 pb-2 flex gap-1.5 shrink-0">
-          {[1, 2, 3, 4, 5].map((s) => (
+          {stepsArray.map((s) => (
             <div
               key={s}
               className={`h-1 flex-1 rounded-full transition-all duration-300 ${
@@ -149,7 +176,7 @@ export default function OnboardingWizard({ userName, onComplete }: OnboardingWiz
         </div>
 
         {/* Botão de Voltar (se aplicável) */}
-        {step > 1 && step < 5 && (
+        {step > 1 && step < 6 && (
           <button
             onClick={handlePrevStep}
             disabled={loading}
@@ -166,8 +193,9 @@ export default function OnboardingWizard({ userName, onComplete }: OnboardingWiz
           {/* Passo 1: Boas-vindas */}
           {step === 1 && (
             <div className="space-y-6 text-center py-6 page-slide-left">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 shadow-sm animate-pulse">
-                <Sparkles size={32} />
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl overflow-hidden bg-gray-50 border border-gray-100 shadow-sm">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/logo.jpeg" alt="Logo Me Pague" className="h-full w-full object-cover" />
               </div>
               <div className="space-y-2">
                 <h2 className="text-2xl font-extrabold tracking-tight text-gray-900">
@@ -417,8 +445,70 @@ export default function OnboardingWizard({ userName, onComplete }: OnboardingWiz
             </div>
           )}
 
-          {/* Passo 5: Conclusão */}
+          {/* Passo 5: Atalho na Tela Inicial (PWA) */}
           {step === 5 && (
+            <div className="space-y-6 py-6 text-center page-slide-left">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 shadow-sm">
+                <Smartphone size={30} />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-xl font-bold text-gray-900">Ter o aplicativo no seu celular?</h2>
+                <p className="text-sm text-gray-500 leading-relaxed max-w-[320px] mx-auto">
+                  Para acessar o <strong>Me Pague</strong> rapidamente com apenas um toque, adicione um atalho na sua tela inicial. Ele funciona igual a um aplicativo comum, mas é levinho e não ocupa a memória do seu aparelho!
+                </p>
+              </div>
+
+              {pwa.isIOS && (
+                <div className="bg-gray-50 p-4 rounded-2xl text-left text-xs text-gray-600 space-y-3 border border-gray-100 max-w-xs mx-auto">
+                  <p className="font-semibold text-gray-800 flex items-center gap-1.5">
+                    <Share size={14} className="text-blue-500" />
+                    Como adicionar no iPhone:
+                  </p>
+                  <ol className="list-decimal list-inside space-y-1.5 text-gray-500">
+                    <li>
+                      Toque no botão de <strong>Compartilhar</strong> (ícone de quadrado com seta para cima no Safari).
+                    </li>
+                    <li>
+                      Role a lista de opções para baixo e selecione <strong>Adicionar à Tela de Início</strong>.
+                    </li>
+                  </ol>
+                </div>
+              )}
+
+              <div className="space-y-3 pt-2">
+                {!pwa.isIOS && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setLoading(true);
+                      const installed = await pwa.install();
+                      setLoading(false);
+                      if (installed) {
+                        handleNextStep();
+                      }
+                    }}
+                    disabled={loading}
+                    className="w-full min-h-12 bg-gray-900 text-white rounded-xl font-semibold flex items-center justify-center gap-2 btn-press shadow-md"
+                  >
+                    <Download size={16} />
+                    {loading ? "Adicionando..." : "Adicionar à Tela Inicial"}
+                  </button>
+                )}
+                
+                <button
+                  type="button"
+                  onClick={handleNextStep}
+                  disabled={loading}
+                  className="w-full min-h-12 bg-gray-50 text-gray-600 rounded-xl font-semibold flex items-center justify-center btn-press hover:bg-gray-100 transition-colors"
+                >
+                  {pwa.isIOS ? "Concluir e Acessar" : "Agora não"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Passo 6: Conclusão */}
+          {step === 6 && (
             <div className="space-y-6 py-6 text-center page-slide-left">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-green-50 text-green-600 shadow-sm">
                 <Check size={30} />

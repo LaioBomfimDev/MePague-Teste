@@ -64,7 +64,7 @@ export default function ReportsPage() {
           <select
             value={selectedMonth}
             onChange={(event) => setSelectedMonth(event.target.value)}
-            className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl text-sm font-medium text-gray-700"
+            className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl text-sm font-medium text-gray-700 animate-emerge"
           >
             <option value="all">Todos os periodos</option>
             {monthOptions.map((month) => (
@@ -191,7 +191,7 @@ export default function ReportsPage() {
             )}
           </section>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2 animate-emerge stagger-2">
             <button
               onClick={() => exportCsv(filteredDebts, receivedPayments, periodLabel)}
               className="w-full p-4 card border-gray-200 text-gray-900 rounded-xl font-medium text-sm flex items-center justify-center gap-2 btn-press"

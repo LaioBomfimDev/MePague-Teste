@@ -89,7 +89,7 @@ export default function DebtorsPage() {
         }
       />
 
-      <div className="relative">
+      <div className="relative animate-emerge">
         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
         <input
           value={search}
@@ -110,7 +110,7 @@ export default function DebtorsPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-1 p-1 bg-gray-50 rounded-xl">
+      <div className="grid grid-cols-3 gap-1 p-1 bg-gray-50 rounded-xl animate-emerge stagger-1">
         {filterOptions.map((option) => (
           <Link
             key={option.value}
