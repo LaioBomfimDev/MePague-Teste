@@ -7,7 +7,7 @@ create table if not exists public.profiles (
   pix_key text not null default '',
   plan text not null default 'free' check (plan in ('free', 'pro')),
   role text not null default 'user' check (role in ('user', 'support', 'operations', 'admin', 'superadmin')),
-  status text not null default 'active' check (status in ('pending', 'active', 'inactive', 'blocked', 'deleted')),
+  status text not null default 'active' check (status in ('pending', 'active', 'inactive')),
   admin_notes text not null default '',
   status_reason text not null default '',
   status_changed_at timestamptz,
@@ -40,8 +40,19 @@ alter table public.profiles
 
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles drop constraint if exists profiles_status_check;
+update public.profiles
+set
+  status = 'inactive',
+  status_reason = case
+    when coalesce(status_reason, '') = '' then 'Status antigo normalizado para inativo'
+    else status_reason
+  end,
+  deleted_at = null,
+  updated_at = now()
+where status in ('blocked', 'deleted')
+  or deleted_at is not null;
 alter table public.profiles add constraint profiles_role_check check (role in ('user', 'support', 'operations', 'admin', 'superadmin'));
-alter table public.profiles add constraint profiles_status_check check (status in ('pending', 'active', 'inactive', 'blocked', 'deleted'));
+alter table public.profiles add constraint profiles_status_check check (status in ('pending', 'active', 'inactive'));
 
 create table if not exists public.customers (
   id uuid primary key default gen_random_uuid(),

@@ -32,7 +32,7 @@ type ProfileRow = {
   pix_key: string;
   plan: "free" | "pro";
   role?: UserRole;
-  status?: UserStatus;
+  status?: UserStatus | "blocked" | "deleted";
   admin_notes?: string;
   status_reason?: string;
   status_changed_at?: string;
@@ -313,6 +313,12 @@ function getUserDisplayName(user: User) {
     : user.email?.split("@")[0] || "Meu Perfil";
 }
 
+function normalizeStatus(status?: ProfileRow["status"]): UserStatus {
+  if (status === "blocked" || status === "deleted") return "inactive";
+
+  return status || "active";
+}
+
 function createDemoDebtWithCustomer(input: {
   name: string;
   phone: string;
@@ -371,7 +377,7 @@ function createDemoDebtWithCustomer(input: {
 
 function mapProfile(row: ProfileRow): UserProfile {
   const role = row.role || "user";
-  const status = row.status === "pending" && role === "user" ? "active" : row.status || "active";
+  const status = row.status === "pending" && role === "user" ? "active" : normalizeStatus(row.status);
 
   return {
     id: row.id,
@@ -678,14 +684,6 @@ export async function getUserAccessState(user: User): Promise<{
     };
   }
 
-  if (profile.status === "blocked") {
-    return {
-      allowed: false,
-      message: "Sua conta esta bloqueada. Fale com o suporte.",
-      profile,
-    };
-  }
-
   if (profile.status === "pending") {
     return {
       allowed: false,
@@ -698,14 +696,6 @@ export async function getUserAccessState(user: User): Promise<{
     return {
       allowed: false,
       message: "Sua conta esta inativa. Fale com o suporte.",
-      profile,
-    };
-  }
-
-  if (profile.status === "deleted") {
-    return {
-      allowed: false,
-      message: "Esta conta foi excluida do acesso ao app.",
       profile,
     };
   }

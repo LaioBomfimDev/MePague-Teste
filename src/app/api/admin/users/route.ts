@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
-import { adminErrorResponse, AdminApiError, requireSuperAdmin, writeAdminAuditLog } from "@/lib/admin-auth";
+import { adminErrorResponse, AdminApiError, requireSuperAdmin, writeAdminAuditLog, type AdminContext } from "@/lib/admin-auth";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import type { AdminUserSummary, RiskLevel, UserRole, UserStatus } from "@/lib/types";
 
@@ -13,7 +13,7 @@ type ProfileRow = {
   email: string;
   plan: "free" | "pro";
   role?: UserRole;
-  status?: UserStatus;
+  status?: UserStatus | "blocked" | "deleted";
   admin_notes?: string | null;
   status_reason?: string | null;
   status_changed_at?: string | null;
@@ -30,7 +30,7 @@ type RecentLogRow = {
 };
 
 const roles: UserRole[] = ["user", "support", "operations", "admin", "superadmin"];
-const statuses: UserStatus[] = ["pending", "active", "inactive", "blocked", "deleted"];
+const statuses: UserStatus[] = ["pending", "active", "inactive"];
 const plans: Array<"free" | "pro"> = ["free", "pro"];
 const sensitiveActions = new Set([
   "admin.password_reset",
@@ -76,6 +76,12 @@ function daysSince(value?: string | null) {
   return Math.max(0, Math.floor((Date.now() - time) / 86_400_000));
 }
 
+function normalizeStatus(status?: ProfileRow["status"]): UserStatus {
+  if (status === "blocked" || status === "deleted") return "inactive";
+
+  return status || "active";
+}
+
 function requireStrongConfirmation(input: {
   action: string;
   confirmation: string;
@@ -86,7 +92,6 @@ function requireStrongConfirmation(input: {
   const isCritical =
     input.action === "reset-password" ||
     input.action === "delete" ||
-    input.status === "deleted" ||
     input.role === "superadmin";
 
   if (!isCritical) return;
@@ -107,7 +112,8 @@ function calculateRisk(input: {
 }) {
   const tags: string[] = [];
   let score = 0;
-  const status = input.profile?.status || "active";
+  const rawStatus = input.profile?.status;
+  const status = normalizeStatus(rawStatus);
   const role = input.profile?.role || "user";
   const daysLastAccess = daysSince(input.authUser?.last_sign_in_at);
   const daysCreated = daysSince(input.profile?.created_at || input.authUser?.created_at);
@@ -117,19 +123,9 @@ function calculateRisk(input: {
     tags.push("Aguardando revisao");
   }
 
-  if (status === "blocked") {
-    score += 55;
-    tags.push("Bloqueio manual");
-  }
-
   if (status === "inactive") {
-    score += 25;
+    score += rawStatus === "blocked" ? 55 : rawStatus === "deleted" ? 70 : 25;
     tags.push("Conta inativa");
-  }
-
-  if (status === "deleted") {
-    score += 70;
-    tags.push("Excluida logicamente");
   }
 
   if (!input.authUser?.email_confirmed_at && !input.authUser?.confirmed_at) {
@@ -257,7 +253,7 @@ async function loadUserSummaries(admin: SupabaseClient): Promise<{ schemaReady: 
       email: profile?.email || authUser?.email || "",
       plan: profile?.plan || "free",
       role: profile?.role || "user",
-      status: profile?.status || "active",
+      status: normalizeStatus(profile?.status),
       authCreatedAt: authUser?.created_at,
       createdAt: profile?.created_at,
       updatedAt: profile?.updated_at,
@@ -299,8 +295,6 @@ export async function GET(request: NextRequest) {
       pending: 0,
       active: 1,
       inactive: 2,
-      blocked: 3,
-      deleted: 4,
     };
 
     return NextResponse.json({
@@ -382,7 +376,7 @@ export async function POST(request: NextRequest) {
         status_reason: reason,
         status_changed_at: now,
         status_changed_by: context.actor.id,
-        deleted_at: status === "deleted" ? now : null,
+        deleted_at: null,
         updated_at: now,
       },
       { onConflict: "id" },
@@ -405,6 +399,87 @@ export async function POST(request: NextRequest) {
   }
 }
 
+async function deleteUsersPermanently(context: AdminContext, userIds: string[], reason: string) {
+  const [authUsers, profilesResult] = await Promise.all([
+    listAuthUsers(context.admin),
+    context.admin
+      .from("profiles")
+      .select("id,name,email,plan,role,status,admin_notes,status_reason,status_changed_at,status_changed_by,deleted_at,created_at,updated_at")
+      .in("id", userIds),
+  ]);
+
+  if (profilesResult.error) throw profilesResult.error;
+
+  const authById = authUsers.reduce((acc, authUser) => acc.set(authUser.id, authUser), new Map<string, User>());
+  const profileById = ((profilesResult.data || []) as ProfileRow[]).reduce(
+    (acc, profile) => acc.set(profile.id, profile),
+    new Map<string, ProfileRow>(),
+  );
+
+  const targets = userIds.map((id) => {
+    const authUser = authById.get(id);
+    const profile = profileById.get(id);
+
+    if (!authUser && !profile) {
+      throw new AdminApiError("Usuario nao encontrado.");
+    }
+
+    return {
+      email: profile?.email || authUser?.email || "",
+      id,
+      name: profile?.name || authUser?.user_metadata?.name || authUser?.email?.split("@")[0] || "Usuario",
+    };
+  });
+
+  const userScopedTables = [
+    "notification_deliveries",
+    "push_subscriptions",
+    "notification_preferences",
+    "charge_logs",
+    "payments",
+    "debts",
+    "customers",
+  ];
+
+  for (const table of userScopedTables) {
+    const { error } = await context.admin.from(table).delete().in("user_id", userIds);
+
+    if (error) throw error;
+  }
+
+  const { error: profilesDeleteError } = await context.admin.from("profiles").delete().in("id", userIds);
+
+  if (profilesDeleteError) throw profilesDeleteError;
+
+  await Promise.all(
+    targets.map(async (target) => {
+      if (authById.has(target.id)) {
+        const { error } = await context.admin.auth.admin.deleteUser(target.id, false);
+
+        if (error) throw error;
+      }
+    }),
+  );
+
+  await Promise.all(
+    targets.map((target) =>
+      writeAdminAuditLog(context, {
+        action: "admin.user_deleted",
+        targetUserId: null,
+        metadata: {
+          deletedUserEmail: target.email,
+          deletedUserId: target.id,
+          deletedUserName: target.name,
+          deletion: "hard",
+          reason,
+        },
+      }),
+    ),
+  );
+
+  return targets.length;
+}
+
 export async function PATCH(request: NextRequest) {
   try {
     const context = await requireSuperAdmin(request);
@@ -414,7 +489,7 @@ export async function PATCH(request: NextRequest) {
     const reason = asString(body.reason);
     const confirmation = asString(body.confirmation);
     const role = asRole(body.role);
-    const status = action === "delete" ? "deleted" : asStatus(body.status);
+    const status = asStatus(body.status);
     const plan = asPlan(body.plan);
     const name = asString(body.name);
     const adminNotes = typeof body.adminNotes === "string" ? body.adminNotes.trim() : null;
@@ -424,6 +499,29 @@ export async function PATCH(request: NextRequest) {
     }
 
     requireStrongConfirmation({ action, confirmation, reason, role, status });
+
+    // Proteção de auto-modificação: superadmin não pode remover seu próprio acesso
+    const isSelf = userIds.includes(context.actor.id);
+
+    if (isSelf) {
+      if (action === "delete") {
+        throw new AdminApiError("Voce nao pode excluir sua propria conta.");
+      }
+
+      if (role && role !== "superadmin") {
+        throw new AdminApiError("Voce nao pode remover seu proprio papel de superadmin.");
+      }
+
+      if (status && status !== "active") {
+        throw new AdminApiError("Voce nao pode desativar sua propria conta.");
+      }
+    }
+
+    if (action === "delete") {
+      const deleted = await deleteUsersPermanently(context, userIds, reason || "Exclusao administrativa definitiva");
+
+      return NextResponse.json({ deleted, ok: true });
+    }
 
     if (action === "reset-password") {
       if (userIds.length > 1) {
@@ -460,7 +558,7 @@ export async function PATCH(request: NextRequest) {
       updates.status_reason = reason || "Alteracao administrativa";
       updates.status_changed_at = now;
       updates.status_changed_by = context.actor.id;
-      updates.deleted_at = status === "deleted" ? now : null;
+      updates.deleted_at = null;
     }
     if (plan) updates.plan = plan;
     if (name && userIds.length === 1) updates.name = name;
@@ -470,43 +568,23 @@ export async function PATCH(request: NextRequest) {
       throw new AdminApiError("Nenhuma alteracao informada.");
     }
 
-    // Proteção de auto-modificação: superadmin não pode remover seu próprio acesso
-    const isSelf = userIds.includes(context.actor.id);
-
-    if (isSelf) {
-      if (role && role !== "superadmin") {
-        throw new AdminApiError("Voce nao pode remover seu proprio papel de superadmin.");
-      }
-
-      if (status && status !== "active") {
-        throw new AdminApiError("Voce nao pode desativar ou excluir sua propria conta.");
-      }
-
-      if (action === "delete") {
-        throw new AdminApiError("Voce nao pode excluir sua propria conta.");
-      }
-    }
-
     const { error } = await context.admin.from("profiles").update(updates).in("id", userIds);
 
     if (error) throw error;
 
-    const auditAction =
-      action === "delete"
-        ? "admin.user_deleted"
-        : status
-          ? userIds.length > 1
-            ? "admin.batch_status_changed"
-            : "admin.user_status_changed"
-          : role
-            ? userIds.length > 1
-              ? "admin.batch_role_changed"
-              : "admin.user_role_changed"
-            : plan
-              ? "admin.user_plan_changed"
-              : adminNotes !== null
-                ? "admin.user_notes_updated"
-                : "admin.user_updated";
+    const auditAction = status
+      ? userIds.length > 1
+        ? "admin.batch_status_changed"
+        : "admin.user_status_changed"
+      : role
+        ? userIds.length > 1
+          ? "admin.batch_role_changed"
+          : "admin.user_role_changed"
+        : plan
+          ? "admin.user_plan_changed"
+          : adminNotes !== null
+            ? "admin.user_notes_updated"
+            : "admin.user_updated";
 
     await Promise.all(
       userIds.map((targetUserId) =>

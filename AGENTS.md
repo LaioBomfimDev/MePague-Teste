@@ -127,8 +127,8 @@ SimpleCov deve ser usado como criterio de cobertura dentro da suite de testes Ru
 
 - Problema: `next dev` pode recriar a pasta `.next` para desenvolvimento, removendo ou invalidando artefatos de producao gerados por `next build`.
 - Risco: depois de usar `npm run dev`, `npm run start` pode falhar dizendo que nao encontrou build de producao.
-- Regra nova: para testar producao, sempre rode `npm run build` imediatamente antes de `npm run start`.
-- Validacao: `npm run build` deve passar; depois `npm run start -- -p <porta> --hostname 127.0.0.1` deve responder nas rotas smoke.
+- Regra nova: para testar producao, sempre rode `npm run build` imediatamente antes de `npm run start:local`.
+- Validacao: `npm run build` deve passar; depois `npm run start:local` deve responder nas rotas smoke em `http://127.0.0.1:3033`.
 
 ### 2026-05-31 - Diagnosticar lentidao, cache e auth antes de culpar Vercel ou banco
 
@@ -136,15 +136,15 @@ SimpleCov deve ser usado como criterio de cobertura dentro da suite de testes Ru
 - Risco: atacar apenas sintomas de cache, Vercel ou banco mascara a causa raiz, piora a experiencia em mobile, multiplica conexoes realtime e pode deixar o usuario preso em uma sessao antiga que so melhora no modo anonimo.
 - Regra nova: quando houver lentidao, falha de conexao, diferenca entre navegador normal e anonimo, ou auth carregando indefinidamente, primeiro verifique estado persistido, storage/cookies, headers de cache, subscriptions realtime duplicadas, checagens duplicadas de perfil/sessao e volume real do banco.
 - Correcoes aplicadas: `src/lib/database.ts` passou a ter carregamento agregado em `loadAppData` e uma unica subscription em `subscribeAppData` com debounce; `src/hooks/useAppData.ts` passou a expor `AppDataProvider` unico para o app; `src/components/AppShell.tsx` e `src/components/BottomNav.tsx` passaram a usar o provider compartilhado em vez de abrir outra subscription de perfil; `src/components/AuthProvider.tsx` reduziu validacao duplicada de sessao e ganhou protecao contra carregamento travado; `src/lib/supabase.ts` ganhou nova `storageKey` para quebrar sessao antiga; `next.config.mjs` ganhou headers `no-store` nas rotas do app.
-- Validacao: medir o Supabase real sem expor secrets para confirmar tamanho/latencia das tabelas; rodar `npm run build`; iniciar servidor local e rodar `SMOKE_BASE_URL=http://127.0.0.1:<porta> npm run smoke`; confirmar que as rotas protegidas e publicas respondem sem abrir multiplas subscriptions por componente.
+- Validacao: medir o Supabase real sem expor secrets para confirmar tamanho/latencia das tabelas; rodar `npm run build`; iniciar servidor local com `npm run start:local`; rodar `npm run smoke`; confirmar que as rotas protegidas e publicas respondem sem abrir multiplas subscriptions por componente.
 
 ### 2026-05-31 - Porta local fixa para producao
 
 - Problema: o OAuth do Google/Supabase estava voltando para portas diferentes, especialmente `localhost:3000`, que pode pertencer a outra plataforma no computador. Isso quebrava o login com Google mesmo quando email/senha funcionava.
 - Risco: misturar portas de producao local, desenvolvimento e teste causa callbacks incorretos no Supabase, origens erradas no Google Cloud e sessoes presas em outro app.
-- Regra nova: a porta local de producao do Me Pague e sempre `3033`. Use `http://localhost:3033` ou `http://127.0.0.1:3033` para validar producao local, Supabase Redirect URLs e Google Authorized JavaScript origins. Nao use `3033` para `next dev`, testes temporarios ou outros apps.
-- Ambiente de teste/desenvolvimento: use outra porta, preferencialmente `3034` para testes locais temporarios. Se precisar usar `next dev`, mantenha separado da producao local e lembre que `next dev` pode invalidar a pasta `.next`; rode `npm run build` novamente antes de `next start` em `3033`.
-- Validacao: iniciar producao local com `next start -p 3033 --hostname 0.0.0.0`; confirmar `http://localhost:3033/login` e `http://127.0.0.1:3033/login`; rodar `SMOKE_BASE_URL=http://127.0.0.1:3033 npm run smoke`.
+- Regra nova: a porta local de producao do Me Pague e sempre `3033`. Use `http://localhost:3033` ou `http://127.0.0.1:3033` para validar producao local, Supabase Redirect URLs e Google Authorized JavaScript origins. Nao use `3033` para `next dev`, testes temporarios ou outros apps; use `npm run start:local` ou os atalhos `.bat`.
+- Ambiente de teste/desenvolvimento: use outra porta, preferencialmente `3034` via `npm run dev:local`, para testes locais temporarios. Se precisar usar `next dev`, mantenha separado da producao local e lembre que `next dev` pode invalidar a pasta `.next`; rode `npm run build` novamente antes de `npm run start:local`.
+- Validacao: iniciar producao local com `npm run start:local`; confirmar `http://localhost:3033/login` e `http://127.0.0.1:3033/login`; rodar `npm run smoke`.
 
 ## Checklist de conclusao
 

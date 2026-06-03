@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:local": "next dev -p 3034 --hostname 127.0.0.1",
     "build": "next build",
+    "clean:users": "node scripts/clean-users-keep-superadmin.mjs",
     "superadmin": "node scripts/bootstrap-superadmin.mjs",
     "vapid": "web-push generate-vapid-keys",
     "test:auth-registration": "node scripts/check-auth-registration-flow.mjs",
@@ -12,6 +14,7 @@
     "smoke": "node scripts/smoke-routes.mjs",
     "test:notifications": "node scripts/check-notifications-flow.mjs",
     "start": "next start",
+    "start:local": "next start -p 3033 --hostname 0.0.0.0",
     "lint": "next lint"
   },
   "dependencies": {

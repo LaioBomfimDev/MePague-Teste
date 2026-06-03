@@ -123,7 +123,7 @@ Se deixar confirmacao de email ligada, o usuario precisa clicar no email antes d
 
 ## 5. Configurar login com Google
 
-O app ja chama o OAuth do Supabase e volta para `/login`.
+O app chama o OAuth do Supabase e volta para `/login` usando a origem atual. Em localhost, o Google OAuth local fica limitado a `3033` para nao cair em callbacks de outros apps ou portas antigas.
 
 No Supabase:
 
@@ -140,7 +140,7 @@ http://127.0.0.1:3033/login
 https://seu-dominio.com/login
 ```
 
-Se voce testar em outra porta local, adicione tambem `http://localhost:<porta>/login`.
+Nao use outra porta para Google OAuth local. Se o app estiver aberto em uma porta de desenvolvimento, como `3034`, o botao do Google avisa para abrir `http://localhost:3033/login`.
 
 No Google Cloud:
 
@@ -177,10 +177,13 @@ Depois entre no app com `laiolindowow10@gmail.com` e senha `654321`.
 ## 7. Rodar localmente
 
 ```bash
-npm run dev
+npm run build
+npm run start:local
 ```
 
 Abra http://localhost:3033, crie uma conta, cadastre uma divida e confira:
+
+Para editar com hot reload, use `npm run dev:local` em `http://127.0.0.1:3034`. Esse modo e separado da validacao de Google OAuth local.
 
 - Table Editor > `profiles`: deve existir um perfil com seu usuario.
 - Table Editor > `customers`: deve aparecer o cliente cadastrado.

@@ -119,17 +119,10 @@ if (legacyUser && legacyUser.id !== user.id) {
     throw deleteLegacyProfileError;
   }
 
-  const { error: deleteLegacyAuthError } = await admin.auth.admin.deleteUser(legacyUser.id, true);
+  const { error: deleteLegacyAuthError } = await admin.auth.admin.deleteUser(legacyUser.id, false);
 
   if (deleteLegacyAuthError) {
-    const { error: disableLegacyAuthError } = await admin.auth.admin.updateUserById(legacyUser.id, {
-      ban_duration: "876000h",
-      user_metadata: { ...(legacyUser.user_metadata || {}), name: "deleted" },
-    });
-
-    if (disableLegacyAuthError) {
-      throw deleteLegacyAuthError;
-    }
+    throw deleteLegacyAuthError;
   }
 }
 

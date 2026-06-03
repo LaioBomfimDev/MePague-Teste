@@ -40,6 +40,8 @@ assert.match(
 assert.match(database, /status:\s*"active",\s*[\r\n]+\s*updated_at:/, "Client profile upsert must create active profiles.");
 assert.match(database, /row\.status === "pending" && role === "user" \? "active"/, "Legacy pending self-service profiles must be treated as active in the app.");
 assert.match(authProvider, /\/api\/auth\/profile/, "Login sessions must ask the server to create or auto-activate the profile.");
+assert.match(authProvider, /LOCAL_GOOGLE_OAUTH_PORT = "3033"/, "Local Google OAuth must stay pinned to the authorized Me Pague port.");
+assert.match(authProvider, /getGoogleOAuthRedirectTo/, "Google OAuth must validate the local redirect target before starting.");
 assert.match(authProfileRoute, /status:\s*"active"/, "Server auth profile sync must create active profiles.");
 assert.match(authProfileRoute, /\.eq\("role", "user"\)[\s\S]*\.eq\("status", "pending"\)/, "Server auth profile sync must activate pending regular users.");
 assert.match(authProvider, /return \{ signedIn: true \};/, "Registration should keep an active session when Supabase returns one.");
@@ -52,9 +54,9 @@ assert.match(
   /updateUserById\(userToUpdate\.id,[\s\S]*email,[\s\S]*email_confirm: true/,
   "Superadmin bootstrap must update the existing admin email instead of creating duplicates.",
 );
-assert.match(bootstrapSuperadmin, /deleted_at:\s*null/, "Superadmin bootstrap must reactivate soft-deleted admin profiles.");
-assert.match(bootstrapSuperadmin, /deleteUser\(legacyUser\.id,\s*true\)/, "Superadmin bootstrap must soft-delete the legacy auth user when it still exists.");
-assert.match(bootstrapSuperadmin, /ban_duration:\s*"876000h"/, "Superadmin bootstrap must disable the legacy auth user if deletion is blocked.");
+assert.match(bootstrapSuperadmin, /deleted_at:\s*null/, "Superadmin bootstrap must clear legacy deleted_at on the kept admin profile.");
+assert.match(bootstrapSuperadmin, /deleteUser\(legacyUser\.id,\s*false\)/, "Superadmin bootstrap must hard-delete the legacy auth user when it still exists.");
+assert.doesNotMatch(bootstrapSuperadmin, /ban_duration/, "Superadmin bootstrap must not keep legacy auth users around as banned accounts.");
 assert.match(bootstrapSuperadmin, /\.in\("role", \["admin", "superadmin"\]\)/, "Superadmin bootstrap must keep only one admin profile.");
 assert.match(migration, /create trigger on_auth_user_created/, "Migration must recreate the auth user trigger.");
 assert.match(migration, /where status = 'pending'[\s\S]*role = 'user'/, "Migration must activate existing regular pending users.");

@@ -2,7 +2,7 @@ export type DebtStatus = "open" | "paid";
 export type MessageTone = "friendly" | "firm" | "overdue";
 export type ChargeLogAction = "copied" | "sent";
 export type UserRole = "user" | "support" | "operations" | "admin" | "superadmin";
-export type UserStatus = "pending" | "active" | "inactive" | "blocked" | "deleted";
+export type UserStatus = "pending" | "active" | "inactive";
 export type RiskLevel = "low" | "medium" | "high";
 export type NotificationRule = "due_tomorrow";
 

@@ -30,6 +30,7 @@ const DEMO_USERNAME = "admlaio";
 const DEMO_PASSWORD = "123456";
 const DEMO_ENABLED = process.env.NEXT_PUBLIC_ENABLE_DEMO === "true";
 const AUTH_TIMEOUT_MS = 5000;
+const LOCAL_GOOGLE_OAUTH_PORT = "3033";
 type UserAccessState = Awaited<ReturnType<typeof getUserAccessState>>;
 
 function createDemoUser(): User {
@@ -74,6 +75,21 @@ function createUserAlreadyExistsError() {
 
 function getAuthNoticeTone(profileStatus?: string) {
   return profileStatus === "pending" ? "info" : "error";
+}
+
+function getGoogleOAuthRedirectTo() {
+  if (typeof window === "undefined") return undefined;
+
+  const redirectUrl = new URL("/login", window.location.origin);
+  const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+
+  if (isLocalhost && window.location.port !== LOCAL_GOOGLE_OAUTH_PORT) {
+    throw new Error(
+      `Para entrar com Google localmente, abra http://${window.location.hostname}:${LOCAL_GOOGLE_OAUTH_PORT}/login. A porta local atual nao esta autorizada no Supabase/Google.`,
+    );
+  }
+
+  return redirectUrl.toString();
 }
 
 async function getSessionAccessState(session: Session): Promise<UserAccessState> {
@@ -251,7 +267,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setAuthNotice(null);
 
-    const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/login` : undefined;
+    const redirectTo = getGoogleOAuthRedirectTo();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {

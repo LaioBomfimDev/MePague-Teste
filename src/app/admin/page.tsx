@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   Archive,
-  Ban,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -49,6 +48,13 @@ type ActionIntent =
     }
   | {
       critical: boolean;
+      kind: "delete";
+      reasonRequired: boolean;
+      title: string;
+      userIds: string[];
+    }
+  | {
+      critical: boolean;
       kind: "role";
       reasonRequired: boolean;
       role: UserRole;
@@ -70,16 +76,12 @@ const statusLabel: Record<UserStatus, string> = {
   pending: "Pendente",
   active: "Ativo",
   inactive: "Inativo",
-  blocked: "Bloqueado",
-  deleted: "Excluido",
 };
 
 const statusClass: Record<UserStatus, string> = {
   pending: "bg-amber-50 text-amber-700",
   active: "bg-green-50 text-green-700",
   inactive: "bg-gray-100 text-gray-700",
-  blocked: "bg-red-50 text-red-600",
-  deleted: "bg-zinc-900 text-white",
 };
 
 const roleLabel: Record<UserRole, string> = {
@@ -271,7 +273,7 @@ export default function AdminPage() {
         if (item.role !== "user") acc.privileged += 1;
         return acc;
       },
-      { active: 0, blocked: 0, deleted: 0, highRisk: 0, inactive: 0, pending: 0, privileged: 0, total: 0 },
+      { active: 0, highRisk: 0, inactive: 0, pending: 0, privileged: 0, total: 0 },
     );
   }, [users]);
 
@@ -364,13 +366,22 @@ export default function AdminPage() {
   }
 
   function updateStatus(targetIds: string[], status: UserStatus) {
-    const critical = status === "deleted" || status === "blocked";
     openAction({
-      critical,
+      critical: false,
       kind: "status",
       reasonRequired: status !== "active",
       status,
       title: `${statusLabel[status]} ${targetIds.length} usuario(s)`,
+      userIds: targetIds,
+    });
+  }
+
+  function deleteUsers(targetIds: string[]) {
+    openAction({
+      critical: true,
+      kind: "delete",
+      reasonRequired: true,
+      title: `Excluir definitivamente ${targetIds.length} usuario(s)`,
       userIds: targetIds,
     });
   }
@@ -424,6 +435,19 @@ export default function AdminPage() {
           userIds: actionIntent.userIds,
         },
         `${actionIntent.userIds.length} usuario(s) atualizado(s).`,
+      );
+      setSelectedIds([]);
+    }
+
+    if (actionIntent.kind === "delete") {
+      await patchUsers(
+        {
+          action: "delete",
+          confirmation: actionConfirmation.trim(),
+          reason,
+          userIds: actionIntent.userIds,
+        },
+        `${actionIntent.userIds.length} usuario(s) excluido(s) definitivamente.`,
       );
       setSelectedIds([]);
     }
@@ -521,9 +545,7 @@ export default function AdminPage() {
           <StatTile icon={Users} label="Usuarios" value={stats.total} onClick={() => setStatusFilter("all")} />
           <StatTile icon={CheckCircle2} label="Ativos" tone="green" value={stats.active} onClick={() => setStatusFilter("active")} />
           <StatTile icon={Archive} label="Inativos" value={stats.inactive} onClick={() => setStatusFilter("inactive")} />
-          <StatTile icon={Trash2} label="Excluidos" tone="dark" value={stats.deleted} onClick={() => setStatusFilter("deleted")} />
           <StatTile icon={Clock3} label="Pendentes" tone="amber" value={stats.pending} onClick={() => setStatusFilter("pending")} />
-          <StatTile icon={Ban} label="Bloqueados" tone="red" value={stats.blocked} onClick={() => setStatusFilter("blocked")} />
           <StatTile icon={ShieldAlert} label="Risco alto" tone="red" value={stats.highRisk} onClick={() => setRiskFilter("high")} />
           <StatTile icon={Lock} label="Privilegiados" tone="blue" value={stats.privileged} onClick={() => setRoleFilter("admin")} />
         </section>
@@ -539,7 +561,7 @@ export default function AdminPage() {
           <section className="rounded-[14px] border border-amber-200 bg-amber-50 p-4 text-amber-800">
             <p className="text-sm font-bold">Schema administrativo pendente</p>
             <p className="mt-1 text-xs leading-relaxed">
-              O painel carregou os usuarios, mas notas internas, inativacao, exclusao logica e motivos dependem do SQL atualizado no Supabase.
+              O painel carregou os usuarios, mas notas internas, inativacao, exclusao definitiva e motivos dependem do SQL atualizado no Supabase.
             </p>
           </section>
         )}
@@ -768,13 +790,10 @@ export default function AdminPage() {
                     <button onClick={() => updateStatus(selectedIds, "inactive")} disabled={!schemaReady} className="admin-action bg-gray-100 text-gray-700 disabled:opacity-40">
                       Inativar
                     </button>
-                    <button onClick={() => updateStatus(selectedIds, "blocked")} className="admin-action bg-red-50 text-red-600">
-                      Bloquear
-                    </button>
                     <button onClick={() => updatePlan(selectedIds, "pro")} className="admin-action bg-blue-50 text-ios-blue">
                       Pro
                     </button>
-                    <button onClick={() => updateStatus(selectedIds, "deleted")} disabled={!schemaReady} className="admin-action bg-zinc-900 text-white disabled:opacity-40">
+                    <button onClick={() => deleteUsers(selectedIds)} disabled={!schemaReady} className="admin-action bg-zinc-900 text-white disabled:opacity-40">
                       Excluir
                     </button>
                     <button onClick={() => downloadCsv(selectedUsers)} className="admin-action bg-gray-100 text-gray-700">
@@ -847,13 +866,10 @@ export default function AdminPage() {
                           <button onClick={() => updateStatus([item.id], "inactive")} disabled={!schemaReady || item.status === "inactive"} className="admin-action bg-gray-100 text-gray-700 disabled:opacity-40">
                             <Archive size={14} /> Inativar
                           </button>
-                          <button onClick={() => updateStatus([item.id], "blocked")} disabled={item.status === "blocked"} className="admin-action bg-red-50 text-red-600 disabled:opacity-40">
-                            <Ban size={14} /> Bloquear
-                          </button>
                           <button onClick={() => resetPassword(item.id)} className="admin-action bg-amber-50 text-amber-700">
                             <KeyRound size={14} /> Reset
                           </button>
-                          <button onClick={() => updateStatus([item.id], "deleted")} disabled={!schemaReady || item.status === "deleted"} className="admin-action bg-zinc-900 text-white disabled:opacity-40">
+                          <button onClick={() => deleteUsers([item.id])} disabled={!schemaReady} className="admin-action bg-zinc-900 text-white disabled:opacity-40">
                             <Trash2 size={14} /> Excluir
                           </button>
                         </div>
@@ -1002,11 +1018,11 @@ export default function AdminPage() {
               <button type="button" onClick={() => updateStatus([focusedUser.id], "inactive")} className="admin-action bg-gray-100 text-gray-700">
                 <Archive size={14} /> Inativar
               </button>
-              <button type="button" onClick={() => updateStatus([focusedUser.id], "blocked")} className="admin-action bg-red-50 text-red-600">
-                <Ban size={14} /> Bloquear
-              </button>
               <button type="button" onClick={() => resetPassword(focusedUser.id)} className="admin-action bg-amber-50 text-amber-700">
                 <KeyRound size={14} /> Reset senha
+              </button>
+              <button type="button" onClick={() => deleteUsers([focusedUser.id])} className="admin-action bg-zinc-900 text-white">
+                <Trash2 size={14} /> Excluir
               </button>
             </div>
           </div>
