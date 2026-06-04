@@ -122,9 +122,9 @@ function buildReminderPayload(items: ReminderItem[], targetDate: string) {
       : `Amanha voce tem ${items.length} recebimentos previstos, totalizando ${formatCurrency(totalAmount)}.`;
 
   return {
-    badge: "/logo.jpeg",
+    badge: "/icons/icon-192.png",
     body,
-    icon: "/logo.jpeg",
+    icon: "/icons/icon-192.png",
     tag: `me-pague-${REMINDER_RULE}-${targetDate}`,
     targetDate,
     title,

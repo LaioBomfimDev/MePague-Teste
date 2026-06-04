@@ -1,11 +1,14 @@
-const CACHE_VERSION = "v3";
+const CACHE_VERSION = "v4";
 const CACHE_NAME = `me-pague-${CACHE_VERSION}`;
 
 // Assets estaticos seguros para cachear no install
 const PRECACHE_ASSETS = [
-  "/logo.jpeg",
+  "/logo.png",
   "/manifest.json",
-  "/icons/icon.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/maskable-icon-512.png",
+  "/icons/apple-touch-icon.png",
 ];
 
 // Instala o SW e pré-cacheia os assets essenciais
@@ -35,7 +38,7 @@ self.addEventListener("activate", (event) => {
 });
 
 function isCacheableAsset(url) {
-  return url.pathname.startsWith("/icons/") || url.pathname === "/logo.jpeg" || url.pathname === "/manifest.json";
+  return url.pathname.startsWith("/icons/") || url.pathname === "/logo.png" || url.pathname === "/manifest.json";
 }
 
 // Estrategia: network-first com fallback para cache apenas em assets estaticos.
@@ -80,12 +83,12 @@ self.addEventListener("push", (event) => {
 
   const title = payload.title || "Me Pague";
   const options = {
-    badge: payload.badge || "/logo.jpeg",
+    badge: payload.badge || "/icons/icon-192.png",
     body: payload.body || "Voce tem uma atualizacao de recebimento.",
     data: {
       url: payload.url || "/",
     },
-    icon: payload.icon || "/logo.jpeg",
+    icon: payload.icon || "/icons/icon-192.png",
     tag: payload.tag || "me-pague-reminder",
   };
 

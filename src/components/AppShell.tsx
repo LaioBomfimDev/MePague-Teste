@@ -49,7 +49,7 @@ function AppShellContent({ children }: { children: ReactNode }) {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
-        <Image src="/logo.jpeg" alt="Carregando" width={100} height={100} className="rounded-3xl shadow-ios animate-pulse" />
+        <Image src="/logo.png" alt="Carregando" width={100} height={100} className="rounded-3xl shadow-ios animate-pulse" />
       </div>
     );
   }

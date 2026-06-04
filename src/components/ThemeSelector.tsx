@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { LucideIcon } from "lucide-react";
-import { Check, Droplets, Heart, Monitor, Moon, Sparkles, Sun, Waves, X } from "lucide-react";
+import { Check, Compass, Droplets, Flame, Heart, Leaf, Monitor, Moon, Sparkles, Sun, Waves, X } from "lucide-react";
 import { useTheme, type ThemeChoice } from "@/components/ThemeProvider";
 
 type ThemeOption = {
   accent: string;
-  category: "Base" | "Rosa" | "Azul";
+  category: "Base" | "Rosa" | "Azul" | "Autorais";
   icon: LucideIcon;
   id: ThemeChoice;
   label: string;
@@ -157,16 +158,77 @@ const themeOptions: ThemeOption[] = [
     },
     swatches: ["#06152E", "#0B2146", "#2563EB"],
   },
+  {
+    accent: "#2F7D1C",
+    category: "Autorais",
+    icon: Leaf,
+    id: "lime-pop",
+    label: "Lima Pop",
+    preview: {
+      button: "#2F7D1C",
+      page: "linear-gradient(135deg, #F7FFE9 0 58%, #FFF1BF 58% 100%)",
+      soft: "#EAF7D0",
+      surface: "#FEFFF7",
+      text: "black",
+    },
+    swatches: ["#F7FFE9", "#FFF1BF", "#2F7D1C"],
+  },
+  {
+    accent: "#0E7C86",
+    category: "Autorais",
+    icon: Compass,
+    id: "aurora-mint",
+    label: "Aurora Menta",
+    preview: {
+      button: "#0E7C86",
+      page: "linear-gradient(135deg, #F5FDFF 0 52%, #FFE8DD 52% 100%)",
+      soft: "#E8F7F9",
+      surface: "#FFFFFF",
+      text: "black",
+    },
+    swatches: ["#F5FDFF", "#FFE8DD", "#0E7C86"],
+  },
+  {
+    accent: "#C24135",
+    category: "Autorais",
+    icon: Flame,
+    id: "graphite-coral",
+    label: "Grafite Coral",
+    preview: {
+      button: "#C24135",
+      page: "linear-gradient(135deg, #111716 0 58%, #20302D 58% 100%)",
+      soft: "#273B36",
+      surface: "#18211F",
+      text: "white",
+    },
+    swatches: ["#111716", "#36D399", "#C24135"],
+  },
 ];
 
-const categories: ThemeOption["category"][] = ["Base", "Rosa", "Azul"];
+const categories: ThemeOption["category"][] = ["Base", "Rosa", "Azul", "Autorais"];
 
 export default function ThemeSelector() {
   const { setTheme, theme } = useTheme();
   const [open, setOpen] = useState(false);
+  const [showNeon, setShowNeon] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const currentOption = themeOptions.find((option) => option.id === theme) || themeOptions[0];
   const CurrentIcon = currentOption.icon;
+
+  useEffect(() => {
+    const hasSeen = localStorage.getItem("mepague_theme_shop_seen");
+    if (!hasSeen) {
+      setShowNeon(true);
+    }
+  }, []);
+
+  const handleOpenShop = () => {
+    setOpen(true);
+    if (showNeon) {
+      setShowNeon(false);
+      localStorage.setItem("mepague_theme_shop_seen", "true");
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -199,18 +261,18 @@ export default function ThemeSelector() {
     <div className="theme-selector">
       <button
         type="button"
-        className="theme-selector__button"
+        className={`theme-selector__button ${showNeon ? "is-neon" : ""}`}
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-label={`Tema: ${currentOption.label}`}
         title={`Tema: ${currentOption.label}`}
-        onClick={() => setOpen(true)}
+        onClick={handleOpenShop}
       >
         <CurrentIcon size={18} strokeWidth={2.1} />
         <span className="theme-selector__button-swatch" style={{ background: currentOption.accent }} aria-hidden="true" />
       </button>
 
-      {open && (
+      {open && typeof document !== "undefined" && createPortal(
         <div
           className="app-modal theme-shop"
           onMouseDown={(event) => {
@@ -306,7 +368,8 @@ export default function ThemeSelector() {
               </button>
             </footer>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

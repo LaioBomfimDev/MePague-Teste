@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, type FormEvent } from "react";
-import { ArrowRight, Bell, Check, Key, DollarSign, ArrowLeft, AlertCircle, Smartphone, Download, Share } from "lucide-react";
+import { ArrowRight, Bell, Check, Key, DollarSign, ArrowLeft, AlertCircle, Download, Share } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { usePwaInstall } from "@/hooks/usePwaInstall";
@@ -195,7 +195,7 @@ export default function OnboardingWizard({ userName, onComplete }: OnboardingWiz
             <div className="space-y-6 text-center py-6 page-slide-left">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl overflow-hidden bg-gray-50 border border-gray-100 shadow-sm">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/logo.jpeg" alt="Logo Me Pague" className="h-full w-full object-cover" />
+                <img src="/logo.png" alt="Logo Me Pague" className="h-full w-full object-cover" />
               </div>
               <div className="space-y-2">
                 <h2 className="text-2xl font-extrabold tracking-tight text-gray-900">
@@ -448,8 +448,9 @@ export default function OnboardingWizard({ userName, onComplete }: OnboardingWiz
           {/* Passo 5: Atalho na Tela Inicial (PWA) */}
           {step === 5 && (
             <div className="space-y-6 py-6 text-center page-slide-left">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 shadow-sm">
-                <Smartphone size={30} />
+              <div className="mx-auto h-16 w-16 overflow-hidden rounded-2xl bg-white shadow-sm">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/logo.png" alt="Logo Me Pague" className="h-full w-full object-cover" />
               </div>
               <div className="space-y-2">
                 <h2 className="text-xl font-bold text-gray-900">Ter o aplicativo no seu celular?</h2>

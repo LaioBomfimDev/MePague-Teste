@@ -160,7 +160,7 @@ export default function Dashboard() {
       <Toast message={notice} tone={noticeTone} />
       <header className="pt-4 flex justify-between items-center px-1">
         <div className="flex items-center gap-3">
-          <Image src="/logo.jpeg" alt="Me Pague Logo" width={44} height={44} className="rounded-xl shadow-sm" />
+          <Image src="/logo.png" alt="Me Pague Logo" width={44} height={44} className="rounded-xl shadow-sm" />
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-black">Me Pague</h1>
             <p className="text-ios-gray text-[13px] font-medium leading-tight">Controle de débitos</p>
@@ -168,9 +168,14 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-2">
           <ThemeSelector />
-          <div className="w-11 h-11 bg-gray-100 rounded-full flex items-center justify-center text-black font-semibold overflow-hidden">
+          <Link
+            href="/profile"
+            className="w-11 h-11 bg-gray-100 rounded-full flex items-center justify-center text-black font-semibold overflow-hidden transition-all hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ios-blue focus-visible:ring-offset-2"
+            aria-label="Abrir ajustes do perfil"
+            title="Abrir ajustes"
+          >
             {profile?.name?.[0]?.toUpperCase() || "M"}
-          </div>
+          </Link>
         </div>
       </header>
 
@@ -380,8 +385,8 @@ function PwaInstallModal({
           <X size={17} />
         </button>
 
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-ios-blue">
-          <Smartphone size={24} strokeWidth={2.2} />
+        <div className="mx-auto h-14 w-14 overflow-hidden rounded-2xl bg-white shadow-sm">
+          <Image src="/logo.png" alt="Me Pague" width={56} height={56} className="h-full w-full object-cover" />
         </div>
 
         {isIOS ? (

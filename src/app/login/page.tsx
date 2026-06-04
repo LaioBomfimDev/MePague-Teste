@@ -159,7 +159,7 @@ export default function LoginPage() {
       </div>
 
       <header className="flex flex-col items-center text-center">
-        <Image src="/logo.jpeg" alt="Me Pague Logo" width={96} height={96} className="rounded-3xl shadow-ios mb-6" />
+        <Image src="/logo.png" alt="Me Pague Logo" width={96} height={96} className="rounded-3xl shadow-ios mb-6" />
         <div>
           <h1 className="text-[2rem] font-extrabold tracking-tight text-gray-950">Me Pague</h1>
           <p className="text-[15px] text-ios-gray mt-3 max-w-[300px] mx-auto leading-relaxed">

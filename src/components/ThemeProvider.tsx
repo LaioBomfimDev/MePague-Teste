@@ -19,7 +19,10 @@ export type ThemeChoice =
   | "pink-night"
   | "blue"
   | "blue-full"
-  | "blue-night";
+  | "blue-night"
+  | "lime-pop"
+  | "aurora-mint"
+  | "graphite-coral";
 export type EffectiveTheme = Exclude<ThemeChoice, "system">;
 
 type ThemeContextValue = {
@@ -39,14 +42,20 @@ const THEME_CHOICES: ThemeChoice[] = [
   "blue",
   "blue-full",
   "blue-night",
+  "lime-pop",
+  "aurora-mint",
+  "graphite-coral",
 ];
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const themeMeta: Record<EffectiveTheme, { colorScheme: "dark" | "light"; themeColor: string }> = {
+  "aurora-mint": { colorScheme: "light", themeColor: "#F5FDFF" },
   blue: { colorScheme: "light", themeColor: "#F4F9FF" },
   "blue-full": { colorScheme: "light", themeColor: "#DBEAFE" },
   "blue-night": { colorScheme: "dark", themeColor: "#06152E" },
   dark: { colorScheme: "dark", themeColor: "#101011" },
+  "graphite-coral": { colorScheme: "dark", themeColor: "#111716" },
+  "lime-pop": { colorScheme: "light", themeColor: "#F7FFE9" },
   light: { colorScheme: "light", themeColor: "#FFFFFF" },
   pink: { colorScheme: "light", themeColor: "#FFF6FB" },
   "pink-full": { colorScheme: "light", themeColor: "#FFD6E9" },
