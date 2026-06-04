@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
+  Activity,
   Archive,
+  CalendarDays,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -11,9 +13,12 @@ import {
   FileClock,
   KeyRound,
   Lock,
+  Mail,
+  NotebookPen,
   RefreshCw,
   Search,
   ShieldAlert,
+  ShieldCheck,
   SlidersHorizontal,
   Trash2,
   UserCog,
@@ -98,6 +103,12 @@ const riskLabel: Record<RiskLevel, string> = {
   high: "Alto",
 };
 
+const riskClass: Record<RiskLevel, string> = {
+  low: "border-green-100 bg-green-50 text-green-700",
+  medium: "border-amber-100 bg-amber-50 text-amber-700",
+  high: "border-red-100 bg-red-50 text-red-600",
+};
+
 async function readError(response: Response) {
   try {
     const body = (await response.json()) as { error?: string };
@@ -114,6 +125,13 @@ function formatDateTime(value?: string | null) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatDaysAgo(days?: number | null) {
+  if (days === null || days === undefined) return "Sem registro";
+  if (days === 0) return "Hoje";
+  if (days === 1) return "Ha 1 dia";
+  return `Ha ${days} dias`;
 }
 
 function actionLabel(action: string) {
@@ -975,57 +993,18 @@ export default function AdminPage() {
       </div>
 
       {focusedUser && detailOpen && (
-        <AdminModal title="Detalhe do usuario" onClose={() => setDetailOpen(false)}>
-          <div className="space-y-4">
-            <div className="flex items-start gap-3">
-              <div className="w-12 h-12 rounded-xl bg-gray-900 text-white flex items-center justify-center font-semibold">
-                {focusedUser.name.slice(0, 1).toUpperCase() || "U"}
-              </div>
-              <div className="min-w-0">
-                <h2 className="font-semibold text-gray-950 truncate">{focusedUser.name}</h2>
-                <p className="text-sm text-gray-500 truncate">{focusedUser.email}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <InfoPill label="Status" value={statusLabel[focusedUser.status]} />
-              <InfoPill label="Perfil" value={roleLabel[focusedUser.role]} />
-              <InfoPill label="Plano" value={focusedUser.plan === "pro" ? "Pro" : "Gratis"} />
-              <InfoPill label="Risco" value={riskLabel[focusedUser.riskLevel]} />
-              <InfoPill label="Criado" value={formatDateTime(focusedUser.createdAt || focusedUser.authCreatedAt)} />
-              <InfoPill label="Ultimo acesso" value={formatDateTime(focusedUser.lastSignInAt)} />
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Marcadores</p>
-              <div className="flex flex-wrap gap-2">
-                {focusedUser.riskTags.length > 0 ? (
-                  focusedUser.riskTags.map((tag) => (
-                    <span key={tag} className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
-                      {tag}
-                    </span>
-                  ))
-                ) : (
-                  <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">Sem alertas</span>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => updateStatus([focusedUser.id], "active")} className="admin-action bg-green-50 text-green-700">
-                <CheckCircle2 size={14} /> Ativar
-              </button>
-              <button type="button" onClick={() => updateStatus([focusedUser.id], "inactive")} className="admin-action bg-gray-100 text-gray-700">
-                <Archive size={14} /> Inativar
-              </button>
-              <button type="button" onClick={() => resetPassword(focusedUser.id)} className="admin-action bg-amber-50 text-amber-700">
-                <KeyRound size={14} /> Reset senha
-              </button>
-              <button type="button" onClick={() => deleteUsers([focusedUser.id])} className="admin-action bg-zinc-900 text-white">
-                <Trash2 size={14} /> Excluir
-              </button>
-            </div>
-          </div>
+        <AdminModal title="Detalhe do usuario" size="lg" onClose={() => setDetailOpen(false)}>
+          <UserDetailContent
+            actionBusy={actionBusy}
+            notesDraft={notesDraft}
+            onDelete={() => deleteUsers([focusedUser.id])}
+            onNotesChange={setNotesDraft}
+            onResetPassword={() => resetPassword(focusedUser.id)}
+            onSaveNotes={() => saveNotes(focusedUser.id)}
+            onStatusChange={(status) => updateStatus([focusedUser.id], status)}
+            schemaReady={schemaReady}
+            user={focusedUser}
+          />
         </AdminModal>
       )}
 
@@ -1081,8 +1060,222 @@ export default function AdminPage() {
   );
 }
 
-function AdminModal({ children, onClose, title }: { children: ReactNode; onClose: () => void; title: string }) {
+function UserDetailContent({
+  actionBusy,
+  notesDraft,
+  onDelete,
+  onNotesChange,
+  onResetPassword,
+  onSaveNotes,
+  onStatusChange,
+  schemaReady,
+  user,
+}: {
+  actionBusy: boolean;
+  notesDraft: string;
+  onDelete: () => void;
+  onNotesChange: (value: string) => void;
+  onResetPassword: () => void;
+  onSaveNotes: () => void;
+  onStatusChange: (status: UserStatus) => void;
+  schemaReady: boolean;
+  user: AdminUserSummary;
+}) {
+  const createdAt = user.createdAt || user.authCreatedAt;
+  const planLabel = user.plan === "pro" ? "Pro" : "Gratis";
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-[18px] bg-gray-950 p-4 text-white">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white text-lg font-bold text-gray-950">
+              {user.name.slice(0, 1).toUpperCase() || "U"}
+            </div>
+            <div className="min-w-0">
+              <h3 className="break-words text-xl font-extrabold leading-tight">{user.name}</h3>
+              <p className="mt-1 break-all text-sm text-white/62">{user.email || "Email nao informado"}</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 sm:justify-end">
+            <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${statusClass[user.status]}`}>{statusLabel[user.status]}</span>
+            <span className="rounded-full bg-blue-50 px-3 py-1.5 text-xs font-bold text-ios-blue">{roleLabel[user.role]}</span>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <DetailMetric label="Plano" value={planLabel} dark />
+          <DetailMetric label="Risco" value={`${riskLabel[user.riskLevel]} (${user.riskScore})`} dark />
+          <DetailMetric label="Criacao" value={formatDaysAgo(user.daysSinceCreated)} dark />
+          <DetailMetric label="Ultimo acesso" value={formatDaysAgo(user.daysSinceLastSignIn)} dark />
+        </div>
+      </section>
+
+      <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+        <section className="space-y-3 rounded-[16px] border border-gray-100 bg-gray-50 p-4">
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-gray-700 shadow-sm">
+              <Activity size={17} />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-gray-950">Dados e acesso</h3>
+              <p className="text-xs text-gray-400">Identificacao, datas e autenticacao</p>
+            </div>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <DetailLine icon={Mail} label="Email" value={user.email || "Nao informado"} />
+            <DetailLine icon={ShieldCheck} label="Email confirmado" value={formatDateTime(user.emailConfirmedAt)} />
+            <DetailLine icon={CalendarDays} label="Conta criada" value={formatDateTime(createdAt)} detail={formatDaysAgo(user.daysSinceCreated)} />
+            <DetailLine icon={Clock3} label="Ultimo login" value={formatDateTime(user.lastSignInAt)} detail={formatDaysAgo(user.daysSinceLastSignIn)} />
+            <DetailLine icon={RefreshCw} label="Ultima atualizacao" value={formatDateTime(user.updatedAt)} />
+            <DetailLine icon={UserCog} label="ID do usuario" value={<span className="font-mono text-[11px]">{user.id}</span>} />
+          </div>
+        </section>
+
+        <section className={`rounded-[16px] border p-4 ${riskClass[user.riskLevel]}`}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase tracking-wide opacity-70">Risco administrativo</p>
+              <h3 className="mt-1 text-2xl font-extrabold leading-none">{riskLabel[user.riskLevel]}</h3>
+            </div>
+            <div className="rounded-2xl bg-white/70 px-3 py-2 text-right shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-wide opacity-60">Score</p>
+              <p className="text-lg font-extrabold">{user.riskScore}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            {user.riskTags.length > 0 ? (
+              user.riskTags.map((tag) => (
+                <span key={tag} className="rounded-full bg-white/72 px-3 py-1 text-xs font-bold shadow-sm">
+                  {tag}
+                </span>
+              ))
+            ) : (
+              <span className="rounded-full bg-white/72 px-3 py-1 text-xs font-bold shadow-sm">Sem alertas</span>
+            )}
+          </div>
+
+          <p className="mt-4 text-xs font-semibold leading-relaxed opacity-75">
+            Use este bloco para priorizar revisoes. Contas com acesso maximo, email sem confirmacao ou acoes sensiveis recentes aparecem com mais peso.
+          </p>
+        </section>
+      </div>
+
+      <section className="grid gap-4 lg:grid-cols-2">
+        <div className="space-y-3 rounded-[16px] border border-gray-100 bg-white p-4">
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-100 text-gray-700">
+              <ShieldAlert size={17} />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-gray-950">Controle administrativo</h3>
+              <p className="text-xs text-gray-400">Status, perfil e motivo registrado</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <DetailMetric label="Status" value={statusLabel[user.status]} />
+            <DetailMetric label="Perfil" value={roleLabel[user.role]} />
+            <DetailMetric label="Plano" value={planLabel} />
+            <DetailMetric label="Status alterado" value={formatDateTime(user.statusChangedAt)} />
+          </div>
+
+          <div className="rounded-xl bg-gray-50 p-3">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Motivo do status</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm font-semibold leading-relaxed text-gray-700">
+              {user.statusReason || "Nenhum motivo registrado."}
+            </p>
+            {user.statusChangedBy && <p className="mt-2 break-all text-[11px] text-gray-400">Alterado por: {user.statusChangedBy}</p>}
+          </div>
+
+          {user.deletedAt && (
+            <DetailLine icon={Trash2} label="Exclusao registrada" value={formatDateTime(user.deletedAt)} detail="Registro marcado como excluido" />
+          )}
+        </div>
+
+        <div className="space-y-3 rounded-[16px] border border-gray-100 bg-white p-4">
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-100 text-gray-700">
+              <NotebookPen size={17} />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-gray-950">Nota interna</h3>
+              <p className="text-xs text-gray-400">Visivel apenas para administracao</p>
+            </div>
+          </div>
+
+          <textarea
+            value={notesDraft}
+            onChange={(event) => onNotesChange(event.target.value)}
+            disabled={!schemaReady}
+            rows={6}
+            className="min-h-[148px] w-full resize-none rounded-xl border border-gray-100 bg-gray-50 p-3 text-sm leading-relaxed text-gray-700 outline-none focus:ring-2 focus:ring-ios-blue/20 disabled:opacity-50"
+            placeholder="Adicione contexto de suporte, revisao ou combinados internos."
+          />
+          <button
+            type="button"
+            onClick={onSaveNotes}
+            disabled={actionBusy || !schemaReady}
+            className="w-full rounded-xl bg-gray-900 p-3 text-sm font-semibold text-white disabled:opacity-50 btn-press"
+          >
+            {actionBusy ? "Salvando..." : "Salvar nota interna"}
+          </button>
+        </div>
+      </section>
+
+      <section className="rounded-[16px] border border-gray-100 bg-gray-50 p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-bold text-gray-950">Acoes rapidas</h3>
+            <p className="text-xs text-gray-400">Mudancas criticas ainda exigem confirmacao</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <button
+            type="button"
+            onClick={() => onStatusChange("active")}
+            disabled={actionBusy || user.status === "active"}
+            className="admin-action bg-green-50 text-green-700 disabled:opacity-40"
+          >
+            <CheckCircle2 size={14} /> Ativar
+          </button>
+          <button
+            type="button"
+            onClick={() => onStatusChange("inactive")}
+            disabled={actionBusy || !schemaReady || user.status === "inactive"}
+            className="admin-action bg-gray-100 text-gray-700 disabled:opacity-40"
+          >
+            <Archive size={14} /> Inativar
+          </button>
+          <button type="button" onClick={onResetPassword} disabled={actionBusy} className="admin-action bg-amber-50 text-amber-700 disabled:opacity-40">
+            <KeyRound size={14} /> Reset senha
+          </button>
+          <button type="button" onClick={onDelete} disabled={actionBusy || !schemaReady} className="admin-action bg-zinc-900 text-white disabled:opacity-40">
+            <Trash2 size={14} /> Excluir
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AdminModal({
+  children,
+  onClose,
+  size = "md",
+  title,
+}: {
+  children: ReactNode;
+  onClose: () => void;
+  size?: "lg" | "md";
+  title: string;
+}) {
   const titleId = useId();
+  const sizeClass = size === "lg" ? "max-w-3xl" : "max-w-lg";
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -1103,7 +1296,7 @@ function AdminModal({ children, onClose, title }: { children: ReactNode; onClose
   return (
     <div className="app-modal z-[130]">
       <button type="button" aria-label="Fechar modal" className="app-modal__backdrop" onClick={onClose} />
-      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="app-modal__panel relative w-full max-w-lg rounded-[18px] bg-white p-4 shadow-2xl">
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className={`app-modal__panel relative w-full ${sizeClass} rounded-[18px] bg-white p-4 shadow-2xl`}>
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 id={titleId} className="text-lg font-bold text-gray-950">{title}</h2>
           <button type="button" onClick={onClose} className="rounded-xl bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-600 btn-press">
@@ -1112,6 +1305,40 @@ function AdminModal({ children, onClose, title }: { children: ReactNode; onClose
         </div>
         {children}
       </div>
+    </div>
+  );
+}
+
+function DetailLine({
+  detail,
+  icon: Icon,
+  label,
+  value,
+}: {
+  detail?: ReactNode;
+  icon: typeof Users;
+  label: string;
+  value: ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 gap-3 rounded-xl bg-white p-3 shadow-sm">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-500">
+        <Icon size={16} />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">{label}</p>
+        <p className="mt-1 break-words text-sm font-bold text-gray-900">{value}</p>
+        {detail && <p className="mt-0.5 break-words text-[11px] font-medium text-gray-400">{detail}</p>}
+      </div>
+    </div>
+  );
+}
+
+function DetailMetric({ dark = false, label, value }: { dark?: boolean; label: string; value: ReactNode }) {
+  return (
+    <div className={`min-w-0 rounded-xl p-3 ${dark ? "bg-white/10" : "bg-gray-50"}`}>
+      <p className={`truncate text-[10px] font-bold uppercase tracking-wide ${dark ? "text-white/45" : "text-gray-400"}`}>{label}</p>
+      <p className={`mt-1 break-words text-sm font-extrabold ${dark ? "text-white" : "text-gray-900"}`}>{value}</p>
     </div>
   );
 }
