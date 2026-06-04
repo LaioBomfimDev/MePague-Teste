@@ -109,6 +109,15 @@ const riskClass: Record<RiskLevel, string> = {
   high: "border-red-100 bg-red-50 text-red-600",
 };
 
+const sensitiveAuditActions = new Set([
+  "admin.password_reset",
+  "admin.user_deleted",
+  "admin.user_status_changed",
+  "admin.user_role_changed",
+  "admin.batch_status_changed",
+  "admin.batch_role_changed",
+]);
+
 async function readError(response: Response) {
   try {
     const body = (await response.json()) as { error?: string };
@@ -163,6 +172,26 @@ function changedFields(log: AuditLog) {
   return keys
     .filter((key) => oldData[key] !== newData[key] && (oldData[key] !== undefined || newData[key] !== undefined))
     .map((key) => `${key}: ${String(oldData[key] ?? "vazio")} -> ${String(newData[key] ?? "vazio")}`);
+}
+
+function auditMetadataString(log: AuditLog, key: string) {
+  const value = log.metadata?.[key];
+
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function auditLogBelongsToUser(log: AuditLog, userId: string) {
+  const deletedUserId = auditMetadataString(log, "deletedUserId");
+
+  return [log.targetUserId, log.recordId, deletedUserId].some((targetId) => targetId === userId);
+}
+
+function auditReason(log: AuditLog) {
+  return auditMetadataString(log, "reason");
+}
+
+function isSensitiveAuditAction(action: string) {
+  return sensitiveAuditActions.has(action);
 }
 
 function downloadCsv(users: AdminUserSummary[]) {
@@ -334,6 +363,11 @@ export default function AdminPage() {
   const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
   const focusedUser = users.find((item) => item.id === focusedUserId) || visibleUsers[0] || null;
   const selectedUsers = users.filter((item) => selectedIds.includes(item.id));
+  const focusedUserAuditLogs = useMemo(() => {
+    if (!focusedUser) return [];
+
+    return logs.filter((log) => auditLogBelongsToUser(log, focusedUser.id)).slice(0, 6);
+  }, [focusedUser, logs]);
 
   useEffect(() => {
     setNotesDraft(focusedUser?.adminNotes || "");
@@ -996,6 +1030,7 @@ export default function AdminPage() {
         <AdminModal title="Detalhe do usuario" size="lg" onClose={() => setDetailOpen(false)}>
           <UserDetailContent
             actionBusy={actionBusy}
+            auditLogs={focusedUserAuditLogs}
             notesDraft={notesDraft}
             onDelete={() => deleteUsers([focusedUser.id])}
             onNotesChange={setNotesDraft}
@@ -1062,6 +1097,7 @@ export default function AdminPage() {
 
 function UserDetailContent({
   actionBusy,
+  auditLogs,
   notesDraft,
   onDelete,
   onNotesChange,
@@ -1072,6 +1108,7 @@ function UserDetailContent({
   user,
 }: {
   actionBusy: boolean;
+  auditLogs: AuditLog[];
   notesDraft: string;
   onDelete: () => void;
   onNotesChange: (value: string) => void;
@@ -1224,6 +1261,48 @@ function UserDetailContent({
             {actionBusy ? "Salvando..." : "Salvar nota interna"}
           </button>
         </div>
+      </section>
+
+      <section className="rounded-[16px] border border-gray-100 bg-white p-4">
+        <div className="mb-4 flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-100 text-gray-700">
+            <FileClock size={17} />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-gray-950">Historico recente</h3>
+            <p className="text-xs text-gray-400">Eventos e acoes sensiveis deste usuario</p>
+          </div>
+        </div>
+
+        {auditLogs.length === 0 ? (
+          <div className="rounded-xl bg-gray-50 p-3 text-sm font-semibold text-gray-500">Nenhum evento recente encontrado.</div>
+        ) : (
+          <ol className="relative space-y-3 border-l border-gray-200 pl-4">
+            {auditLogs.map((log) => {
+              const reason = auditReason(log);
+              const sensitive = isSensitiveAuditAction(log.action);
+
+              return (
+                <li key={log.id} className="relative">
+                  <span className={`absolute -left-[21px] top-4 h-3 w-3 rounded-full border-2 border-white ${sensitive ? "bg-amber-500" : "bg-gray-900"}`} />
+                  <article className="rounded-xl bg-gray-50 p-3">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <h4 className="break-words text-sm font-bold text-gray-900">{actionLabel(log.action)}</h4>
+                        {sensitive && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">Sensivel</span>}
+                      </div>
+                      <time dateTime={log.createdAt} className="shrink-0 text-[11px] font-semibold text-gray-400">
+                        {formatDateTime(log.createdAt)}
+                      </time>
+                    </div>
+                    <p className="mt-1 break-all text-xs font-medium text-gray-500">Ator: {log.actorEmail || "Sistema"}</p>
+                    {reason && <p className="mt-2 whitespace-pre-wrap rounded-lg bg-white p-2 text-xs leading-relaxed text-gray-600">{reason}</p>}
+                  </article>
+                </li>
+              );
+            })}
+          </ol>
+        )}
       </section>
 
       <section className="rounded-[16px] border border-gray-100 bg-gray-50 p-4">
