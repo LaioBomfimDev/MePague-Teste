@@ -4,6 +4,7 @@ export type ChargeLogAction = "copied" | "sent";
 export type UserRole = "user" | "support" | "operations" | "admin" | "superadmin";
 export type UserStatus = "pending" | "active" | "inactive";
 export type RiskLevel = "low" | "medium" | "high";
+export type AdminUserUsageSignal = "active" | "login_only" | "no_login" | "stale" | "trial";
 export type NotificationRule = "due_tomorrow";
 
 export type UserProfile = {
@@ -151,6 +152,21 @@ export type AdminUserSummary = {
   riskScore: number;
   riskTags: string[];
   recentSensitiveActionAt?: string | null;
+  activity: AdminUserActivitySummary;
+};
+
+export type AdminUserActivitySummary = {
+  customerCount: number;
+  debtCount: number;
+  openDebtCount: number;
+  paidDebtCount: number;
+  paymentCount: number;
+  chargeLogCount: number;
+  lastUserActionAt?: string | null;
+  lastUserActionLabel: string;
+  usageDescription: string;
+  usageLabel: string;
+  usageSignal: AdminUserUsageSignal;
 };
 
 export type AuditLog = {

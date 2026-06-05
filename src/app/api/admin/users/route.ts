@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { adminErrorResponse, AdminApiError, requireSuperAdmin, writeAdminAuditLog, type AdminContext } from "@/lib/admin-auth";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
-import type { AdminUserSummary, RiskLevel, UserRole, UserStatus } from "@/lib/types";
+import type { AdminUserActivitySummary, AdminUserSummary, AdminUserUsageSignal, RiskLevel, UserRole, UserStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +29,37 @@ type RecentLogRow = {
   created_at: string;
 };
 
+type DebtActivityRow = {
+  user_id: string;
+  status?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+type UserScopedActivityRow = {
+  user_id: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+type ChargeLogActivityRow = {
+  user_id: string;
+  action?: string | null;
+  created_at?: string | null;
+};
+
+type OperationalAuditRow = {
+  actor_id?: string | null;
+  target_user_id?: string | null;
+  action: string;
+  table_name?: string | null;
+  created_at: string;
+};
+
 const roles: UserRole[] = ["user", "support", "operations", "admin", "superadmin"];
 const statuses: UserStatus[] = ["pending", "active", "inactive"];
 const plans: Array<"free" | "pro"> = ["free", "pro"];
+const operationalTables = ["customers", "debts", "payments", "charge_logs"];
 const sensitiveActions = new Set([
   "admin.password_reset",
   "admin.user_deleted",
@@ -74,6 +102,147 @@ function daysSince(value?: string | null) {
   if (Number.isNaN(time)) return null;
 
   return Math.max(0, Math.floor((Date.now() - time) / 86_400_000));
+}
+
+function createEmptyActivitySummary(): AdminUserActivitySummary {
+  return {
+    customerCount: 0,
+    debtCount: 0,
+    openDebtCount: 0,
+    paidDebtCount: 0,
+    paymentCount: 0,
+    chargeLogCount: 0,
+    lastUserActionAt: null,
+    lastUserActionLabel: "Sem acao registrada",
+    usageDescription: "Nao ha login nem registros operacionais no app.",
+    usageLabel: "Nunca entrou",
+    usageSignal: "no_login",
+  };
+}
+
+function applyUsageSignal(
+  activity: AdminUserActivitySummary,
+  input: {
+    lastSignInAt?: string | null;
+  },
+) {
+  const hasLogin = Boolean(input.lastSignInAt);
+  const hasRealUse = activity.debtCount >= 2 || activity.chargeLogCount > 0 || activity.paymentCount > 0;
+  const hasTrialUse = activity.customerCount > 0 || activity.debtCount > 0;
+  const daysLastAction = daysSince(activity.lastUserActionAt);
+  let usageSignal: AdminUserUsageSignal = "no_login";
+  let usageLabel = "Nunca entrou";
+  let usageDescription = "Nao ha login nem registros operacionais no app.";
+
+  if (hasRealUse) {
+    if (daysLastAction !== null && daysLastAction >= 30) {
+      usageSignal = "stale";
+      usageLabel = "Usou, mas parou";
+      usageDescription = "Tem sinais reais de uso, mas a ultima atividade operacional ficou antiga.";
+    } else {
+      usageSignal = "active";
+      usageLabel = "Usando de verdade";
+      usageDescription = "Tem cobrancas, pagamentos ou varias dividas cadastradas.";
+    }
+  } else if (hasTrialUse) {
+    usageSignal = "trial";
+    usageLabel = "Testou pouco";
+    usageDescription = "Criou poucos registros e ainda nao tem cobranca, pagamento ou recorrencia clara.";
+  } else if (hasLogin) {
+    usageSignal = "login_only";
+    usageLabel = "So fez login";
+    usageDescription = "Entrou no app, mas nao cadastrou cliente, divida, cobranca ou pagamento.";
+  }
+
+  activity.usageDescription = usageDescription;
+  activity.usageLabel = usageLabel;
+  activity.usageSignal = usageSignal;
+
+  return activity;
+}
+
+function ensureActivitySummary(map: Map<string, AdminUserActivitySummary>, userId: string) {
+  const current = map.get(userId);
+
+  if (current) return current;
+
+  const created = createEmptyActivitySummary();
+  map.set(userId, created);
+  return created;
+}
+
+function applyLatestActivity(summary: AdminUserActivitySummary, at: string | null | undefined, label: string) {
+  if (!at) return;
+
+  if (!summary.lastUserActionAt || at > summary.lastUserActionAt) {
+    summary.lastUserActionAt = at;
+    summary.lastUserActionLabel = label;
+  }
+}
+
+function activityLabelFor(action: string, tableName?: string | null) {
+  const key = `${tableName || "unknown"}:${action}`;
+  const labels: Record<string, string> = {
+    "charge_logs:insert": "Cobranca registrada",
+    "charge_logs:update": "Cobranca atualizada",
+    "charge_logs:delete": "Cobranca removida",
+    "customers:insert": "Cliente cadastrado",
+    "customers:update": "Cliente atualizado",
+    "customers:delete": "Cliente removido",
+    "debts:insert": "Divida cadastrada",
+    "debts:update": "Divida atualizada",
+    "debts:delete": "Divida removida",
+    "payments:insert": "Pagamento registrado",
+    "payments:update": "Pagamento atualizado",
+    "payments:delete": "Pagamento removido",
+  };
+
+  return labels[key] || "Atividade registrada";
+}
+
+function buildActivitySummaries(input: {
+  auditRows: OperationalAuditRow[];
+  chargeLogRows: ChargeLogActivityRow[];
+  customerRows: UserScopedActivityRow[];
+  debtRows: DebtActivityRow[];
+  paymentRows: UserScopedActivityRow[];
+}) {
+  const summaries = new Map<string, AdminUserActivitySummary>();
+
+  for (const row of input.customerRows) {
+    const summary = ensureActivitySummary(summaries, row.user_id);
+    summary.customerCount += 1;
+    applyLatestActivity(summary, row.updated_at || row.created_at, row.updated_at && row.updated_at !== row.created_at ? "Cliente atualizado" : "Cliente cadastrado");
+  }
+
+  for (const row of input.debtRows) {
+    const summary = ensureActivitySummary(summaries, row.user_id);
+    summary.debtCount += 1;
+    if (row.status === "paid") summary.paidDebtCount += 1;
+    if (row.status !== "paid") summary.openDebtCount += 1;
+    applyLatestActivity(summary, row.updated_at || row.created_at, row.updated_at && row.updated_at !== row.created_at ? "Divida atualizada" : "Divida cadastrada");
+  }
+
+  for (const row of input.paymentRows) {
+    const summary = ensureActivitySummary(summaries, row.user_id);
+    summary.paymentCount += 1;
+    applyLatestActivity(summary, row.updated_at || row.created_at, "Pagamento registrado");
+  }
+
+  for (const row of input.chargeLogRows) {
+    const summary = ensureActivitySummary(summaries, row.user_id);
+    summary.chargeLogCount += 1;
+    applyLatestActivity(summary, row.created_at, row.action === "sent" ? "Cobranca enviada" : "Cobranca preparada");
+  }
+
+  for (const row of input.auditRows) {
+    if (!row.actor_id) continue;
+
+    const summary = ensureActivitySummary(summaries, row.actor_id);
+    applyLatestActivity(summary, row.created_at, activityLabelFor(row.action, row.table_name));
+  }
+
+  return summaries;
 }
 
 function normalizeStatus(status?: ProfileRow["status"]): UserStatus {
@@ -212,7 +381,16 @@ async function loadProfiles(admin: SupabaseClient) {
 }
 
 async function loadUserSummaries(admin: SupabaseClient): Promise<{ schemaReady: boolean; users: AdminUserSummary[] }> {
-  const [authUsers, profilesResult, recentLogsResult] = await Promise.all([
+  const [
+    authUsers,
+    profilesResult,
+    recentLogsResult,
+    debtActivityResult,
+    customerActivityResult,
+    paymentActivityResult,
+    chargeLogActivityResult,
+    operationalAuditResult,
+  ] = await Promise.all([
     listAuthUsers(admin),
     loadProfiles(admin),
     admin
@@ -221,9 +399,24 @@ async function loadUserSummaries(admin: SupabaseClient): Promise<{ schemaReady: 
       .in("action", Array.from(sensitiveActions))
       .order("created_at", { ascending: false })
       .limit(300),
+    admin.from("debts").select("user_id,status,created_at,updated_at"),
+    admin.from("customers").select("user_id,created_at,updated_at"),
+    admin.from("payments").select("user_id,created_at"),
+    admin.from("charge_logs").select("user_id,action,created_at"),
+    admin
+      .from("audit_logs")
+      .select("actor_id,target_user_id,action,table_name,created_at")
+      .in("table_name", operationalTables)
+      .order("created_at", { ascending: false })
+      .limit(1000),
   ]);
 
   if (recentLogsResult.error) throw recentLogsResult.error;
+  if (debtActivityResult.error) throw debtActivityResult.error;
+  if (customerActivityResult.error) throw customerActivityResult.error;
+  if (paymentActivityResult.error) throw paymentActivityResult.error;
+  if (chargeLogActivityResult.error) throw chargeLogActivityResult.error;
+  if (operationalAuditResult.error) throw operationalAuditResult.error;
 
   const profiles = profilesResult.profiles.reduce(
     (acc, profile) => acc.set(profile.id, profile),
@@ -239,6 +432,13 @@ async function loadUserSummaries(admin: SupabaseClient): Promise<{ schemaReady: 
     },
     new Map<string, string>(),
   );
+  const activitySummaries = buildActivitySummaries({
+    auditRows: (operationalAuditResult.data || []) as OperationalAuditRow[],
+    chargeLogRows: (chargeLogActivityResult.data || []) as ChargeLogActivityRow[],
+    customerRows: (customerActivityResult.data || []) as UserScopedActivityRow[],
+    debtRows: (debtActivityResult.data || []) as DebtActivityRow[],
+    paymentRows: (paymentActivityResult.data || []) as UserScopedActivityRow[],
+  });
   const ids = new Set([...Array.from(profiles.keys()), ...authUsers.map((authUser) => authUser.id)]);
 
   const users = Array.from(ids).map((id) => {
@@ -246,6 +446,8 @@ async function loadUserSummaries(admin: SupabaseClient): Promise<{ schemaReady: 
     const profile = profiles.get(id);
     const recentSensitiveActionAt = recentSensitiveActions.get(id) || null;
     const risk = calculateRisk({ authUser, profile, recentSensitiveActionAt });
+    const activity = activitySummaries.get(id) || createEmptyActivitySummary();
+    const activityWithUsage = applyUsageSignal(activity, { lastSignInAt: authUser?.last_sign_in_at });
 
     return {
       id,
@@ -270,6 +472,7 @@ async function loadUserSummaries(admin: SupabaseClient): Promise<{ schemaReady: 
       riskLevel: risk.riskLevel,
       riskScore: risk.riskScore,
       riskTags: risk.riskTags,
+      activity: activityWithUsage,
     };
   });
 

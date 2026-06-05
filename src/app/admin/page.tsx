@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   Activity,
   Archive,
@@ -29,7 +30,7 @@ import MobileHeader from "@/components/MobileHeader";
 import Toast from "@/components/Toast";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
-import type { AdminUserSummary, AuditLog, RiskLevel, UserRole, UserStatus } from "@/lib/types";
+import type { AdminUserSummary, AdminUserUsageSignal, AuditLog, RiskLevel, UserRole, UserStatus } from "@/lib/types";
 
 type AdminTab = "users" | "audit";
 type AccessWindow = "all" | "never" | "7" | "30" | "45";
@@ -107,6 +108,14 @@ const riskClass: Record<RiskLevel, string> = {
   low: "border-green-100 bg-green-50 text-green-700",
   medium: "border-amber-100 bg-amber-50 text-amber-700",
   high: "border-red-100 bg-red-50 text-red-600",
+};
+
+const usageSignalClass: Record<AdminUserUsageSignal, string> = {
+  active: "border-green-100 bg-green-50 text-green-700",
+  login_only: "border-gray-100 bg-gray-50 text-gray-700",
+  no_login: "border-gray-100 bg-gray-50 text-gray-500",
+  stale: "border-amber-100 bg-amber-50 text-amber-700",
+  trial: "border-blue-100 bg-blue-50 text-ios-blue",
 };
 
 const sensitiveAuditActions = new Set([
@@ -192,6 +201,10 @@ function auditReason(log: AuditLog) {
 
 function isSensitiveAuditAction(action: string) {
   return sensitiveAuditActions.has(action);
+}
+
+function isAdminAuditLog(log: AuditLog) {
+  return log.action.startsWith("admin.") || log.tableName === "admin";
 }
 
 function downloadCsv(users: AdminUserSummary[]) {
@@ -366,7 +379,7 @@ export default function AdminPage() {
   const focusedUserAuditLogs = useMemo(() => {
     if (!focusedUser) return [];
 
-    return logs.filter((log) => auditLogBelongsToUser(log, focusedUser.id)).slice(0, 6);
+    return logs.filter((log) => isAdminAuditLog(log) && auditLogBelongsToUser(log, focusedUser.id)).slice(0, 6);
   }, [focusedUser, logs]);
 
   useEffect(() => {
@@ -1120,6 +1133,7 @@ function UserDetailContent({
 }) {
   const createdAt = user.createdAt || user.authCreatedAt;
   const planLabel = user.plan === "pro" ? "Pro" : "Gratis";
+  const activity = user.activity;
 
   return (
     <div className="space-y-5">
@@ -1201,6 +1215,41 @@ function UserDetailContent({
         </section>
       </div>
 
+      <section className="rounded-[16px] border border-gray-100 bg-white p-4">
+        <div className="mb-4 flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-100 text-gray-700">
+            <Activity size={17} />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-gray-950">Atividade do app</h3>
+            <p className="text-xs text-gray-400">Contagens sem valores financeiros</p>
+          </div>
+        </div>
+
+        <div className={`mb-3 rounded-xl border p-3 ${usageSignalClass[activity.usageSignal]}`}>
+          <p className="text-[10px] font-bold uppercase tracking-wide opacity-70">Sinal de uso</p>
+          <p className="mt-1 text-lg font-extrabold leading-tight">{activity.usageLabel}</p>
+          <p className="mt-1 text-xs font-semibold leading-relaxed opacity-75">{activity.usageDescription}</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          <DetailMetric label="Dividas cadastradas" value={activity.debtCount} />
+          <DetailMetric label="Em aberto" value={activity.openDebtCount} />
+          <DetailMetric label="Pagas" value={activity.paidDebtCount} />
+          <DetailMetric label="Clientes" value={activity.customerCount} />
+          <DetailMetric label="Cobrancas" value={activity.chargeLogCount} />
+          <DetailMetric label="Pagamentos" value={activity.paymentCount} />
+        </div>
+
+        <div className="mt-3 rounded-xl bg-gray-50 p-3">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Ultima acao do usuario</p>
+          <p className="mt-1 text-sm font-extrabold text-gray-900">{activity.lastUserActionLabel}</p>
+          <p className="mt-0.5 text-xs font-medium text-gray-400">
+            {activity.lastUserActionAt ? formatDateTime(activity.lastUserActionAt) : "Sem registro"}
+          </p>
+        </div>
+      </section>
+
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-3 rounded-[16px] border border-gray-100 bg-white p-4">
           <div className="flex items-center gap-2">
@@ -1269,8 +1318,8 @@ function UserDetailContent({
             <FileClock size={17} />
           </div>
           <div className="min-w-0">
-            <h3 className="text-sm font-bold text-gray-950">Historico recente</h3>
-            <p className="text-xs text-gray-400">Eventos e acoes sensiveis deste usuario</p>
+            <h3 className="text-sm font-bold text-gray-950">Historico administrativo recente</h3>
+            <p className="text-xs text-gray-400">Eventos de governanca sobre esta conta</p>
           </div>
         </div>
 
@@ -1355,8 +1404,11 @@ function AdminModal({
 }) {
   const titleId = useId();
   const sizeClass = size === "lg" ? "max-w-3xl" : "max-w-lg";
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
+
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         onClose();
@@ -1372,10 +1424,12 @@ function AdminModal({
     };
   }, [onClose]);
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <div className="app-modal z-[130]">
-      <button type="button" aria-label="Fechar modal" className="app-modal__backdrop" onClick={onClose} />
-      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className={`app-modal__panel relative w-full ${sizeClass} rounded-[18px] bg-white p-4 shadow-2xl`}>
+      <button type="button" aria-label="Fechar modal" className="app-modal__backdrop z-0" onClick={onClose} />
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className={`app-modal__panel relative z-10 w-full ${sizeClass} rounded-[18px] bg-white p-4 shadow-2xl`}>
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 id={titleId} className="text-lg font-bold text-gray-950">{title}</h2>
           <button type="button" onClick={onClose} className="rounded-xl bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-600 btn-press">
@@ -1384,7 +1438,8 @@ function AdminModal({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

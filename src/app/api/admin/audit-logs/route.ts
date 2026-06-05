@@ -18,6 +18,14 @@ type AuditLogRow = {
   created_at: string;
 };
 
+const visibleAuditFields = new Set(["admin_notes", "email", "name", "plan", "role", "status", "status_reason"]);
+
+function sanitizeAuditData(data?: Record<string, unknown> | null) {
+  if (!data) return data;
+
+  return Object.fromEntries(Object.entries(data).filter(([key]) => visibleAuditFields.has(key)));
+}
+
 export async function GET(request: NextRequest) {
   try {
     const context = await requireSuperAdmin(request);
@@ -37,8 +45,8 @@ export async function GET(request: NextRequest) {
       action: row.action,
       tableName: row.table_name,
       recordId: row.record_id,
-      oldData: row.old_data,
-      newData: row.new_data,
+      oldData: sanitizeAuditData(row.old_data),
+      newData: sanitizeAuditData(row.new_data),
       metadata: row.metadata || {},
       createdAt: row.created_at,
     }));
