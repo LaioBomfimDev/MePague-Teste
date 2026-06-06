@@ -22,7 +22,7 @@ Para hot reload sem mexer no build de producao local:
 npm run dev:local
 ```
 
-Isso abre o Next dev em [http://127.0.0.1:3034](http://127.0.0.1:3034). O Google OAuth local fica reservado para `3033`, porque essa e a porta cadastrada no Supabase e no Google Cloud.
+Isso abre o Next dev em [http://127.0.0.1:3033](http://127.0.0.1:3033), a mesma porta cadastrada no Supabase e no Google Cloud.
 
 ## Validacao
 

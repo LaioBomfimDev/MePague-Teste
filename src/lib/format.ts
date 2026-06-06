@@ -34,7 +34,8 @@ export function normalizePhone(phone: string) {
 }
 
 export function formatPhoneInput(value: string) {
-  const digits = normalizePhone(value).slice(0, 11);
+  const rawDigits = normalizePhone(value);
+  const digits = (rawDigits.startsWith("55") && rawDigits.length > 11 ? rawDigits.slice(2) : rawDigits).slice(0, 11);
 
   if (digits.length <= 2) return digits;
   if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;

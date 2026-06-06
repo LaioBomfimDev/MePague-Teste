@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "dev:local": "next dev -p 3034 --hostname 127.0.0.1",
+    "dev:local": "next dev -p 3033 --hostname 127.0.0.1",
     "build": "next build",
     "clean:users": "node scripts/clean-users-keep-superadmin.mjs",
     "superadmin": "node scripts/bootstrap-superadmin.mjs",
@@ -15,7 +15,7 @@
     "test:notifications": "node scripts/check-notifications-flow.mjs",
     "test:admin-detail": "node scripts/check-admin-detail-timeline.mjs",
     "start": "next start",
-    "start:local": "next start -p 3033 --hostname 0.0.0.0",
+    "start:local": "next start -p 3033 --hostname 127.0.0.1",
     "lint": "next lint"
   },
   "dependencies": {

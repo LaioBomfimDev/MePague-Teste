@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
-import { ArrowLeft, ArrowRight, Check, Camera } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Camera, ContactRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { useAppData } from "@/hooks/useAppData";
@@ -17,6 +17,22 @@ import {
   parseCurrencyInput,
 } from "@/lib/format";
 
+type ContactPickerContact = {
+  name?: string[];
+  tel?: string[];
+};
+
+type ContactPickerNavigator = Navigator & {
+  contacts?: {
+    select?: (
+      properties: Array<"name" | "tel">,
+      options?: {
+        multiple?: boolean;
+      },
+    ) => Promise<ContactPickerContact[]>;
+  };
+};
+
 export default function NewDebtPage() {
   const [step, setStep] = useState(1);
   const [name, setName] = useState("");
@@ -28,6 +44,8 @@ export default function NewDebtPage() {
   const [frequency, setFrequency] = useState<"monthly" | "weekly">("monthly");
   const [description, setDescription] = useState("");
   const [photoNotice, setPhotoNotice] = useState("");
+  const [contactNotice, setContactNotice] = useState("");
+  const [importingContact, setImportingContact] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
@@ -122,6 +140,54 @@ export default function NewDebtPage() {
     setPhone(formatPhoneInput(customer.phone));
   }
 
+  async function importFromContacts() {
+    setContactNotice("");
+    setError("");
+
+    if (typeof navigator === "undefined") {
+      setContactNotice("A agenda esta disponivel em navegadores moveis compativeis.");
+      return;
+    }
+
+    const contacts = (navigator as ContactPickerNavigator).contacts;
+
+    if (!contacts?.select) {
+      setContactNotice("A agenda esta disponivel em navegadores moveis compativeis.");
+      return;
+    }
+
+    try {
+      setImportingContact(true);
+      const selectedContacts = await contacts.select(["name", "tel"], { multiple: false });
+      const selectedContact = selectedContacts[0];
+
+      if (!selectedContact) return;
+
+      const importedName = selectedContact.name?.find((value) => value.trim())?.trim() || "";
+      const importedPhone = selectedContact.tel?.find((value) => normalizePhone(value)) || "";
+
+      if (importedName) setName(importedName);
+      if (importedPhone) setPhone(formatPhoneInput(importedPhone));
+
+      if (!importedName && !importedPhone) {
+        setContactNotice("Este contato nao tem nome ou telefone para importar.");
+        return;
+      }
+
+      setContactNotice(
+        importedName && importedPhone
+          ? "Contato importado. Revise os dados antes de continuar."
+          : "Contato importado parcialmente. Complete o que faltar.",
+      );
+    } catch (importError) {
+      if (importError instanceof DOMException && importError.name === "AbortError") return;
+
+      setContactNotice("Nao foi possivel acessar a agenda neste dispositivo.");
+    } finally {
+      setImportingContact(false);
+    }
+  }
+
   return (
     <form onSubmit={handleSubmit} className="min-h-[100dvh] bg-white flex flex-col page-transition">
       <header className="p-5 flex items-center justify-between shrink-0">
@@ -163,6 +229,29 @@ export default function NewDebtPage() {
             </div>
 
             <div className="space-y-4">
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={importFromContacts}
+                  disabled={importingContact}
+                  className="w-full min-h-14 px-3 py-3 rounded-xl bg-gray-50 border border-gray-100 text-gray-700 flex items-center justify-between gap-3 btn-press hover:bg-gray-100 transition-colors disabled:opacity-60"
+                >
+                  <span className="flex items-center gap-3 min-w-0">
+                    <span className="w-9 h-9 rounded-lg bg-white text-gray-500 flex items-center justify-center shadow-ios shrink-0">
+                      <ContactRound size={18} strokeWidth={1.8} />
+                    </span>
+                    <span className="text-left min-w-0">
+                      <span className="block text-sm font-semibold text-gray-900">
+                        {importingContact ? "Abrindo agenda..." : "Importar da agenda"}
+                      </span>
+                      <span className="block text-xs text-gray-400 mt-0.5">Nome e telefone</span>
+                    </span>
+                  </span>
+                  <ArrowRight size={16} strokeWidth={2} className="text-gray-300 shrink-0" />
+                </button>
+                {contactNotice && <p className="text-xs text-gray-400 font-medium ml-0.5">{contactNotice}</p>}
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-gray-400 uppercase tracking-wide ml-0.5">Nome Completo</label>
                 <input
