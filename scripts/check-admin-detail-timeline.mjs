@@ -28,6 +28,9 @@ const drawer = sliceBetween(adminPage, "function UserDetailContent({", "function
 const modal = sliceBetween(adminPage, "function AdminModal({", "function DetailLine(");
 
 assert.match(adminPage, /const sensitiveAuditActions = new Set\(\[/, "Admin page must keep a sensitive audit action list for the drawer.");
+assert.match(adminPage, /const emptyActivitySummary: AdminUserSummary\["activity"\]/, "Admin page must keep a safe activity fallback for stale admin user summaries.");
+assert.match(adminPage, /function normalizeAdminUserSummary\(item: AdminUserSummary\): AdminUserSummary/, "Admin page must normalize admin user summaries before rendering details.");
+assert.match(adminPage, /\.map\(normalizeAdminUserSummary\)/, "Admin data loading must apply the user summary normalizer.");
 assert.match(adminPage, /function auditLogBelongsToUser\(log: AuditLog, userId: string\)/, "Admin page must map audit logs to the focused user.");
 assert.match(adminPage, /function isAdminAuditLog\(log: AuditLog\)/, "Admin detail timeline must distinguish admin audit from product activity.");
 assert.match(adminPage, /deletedUserId/, "Audit log matching must include hard-delete metadata.");
@@ -62,6 +65,7 @@ assert.ok(
   countMatches(adminPage, /onClick=\{\(\) => openDetail\(item\.id\)\}/g) >= 2,
   "Mobile user cards must keep touch targets that open the detail modal.",
 );
+assert.match(adminPage, /<Eye size=\{14\} \/> Detalhes/, "User cards must expose a Detalhes button for the interaction smoke.");
 assert.match(
   adminPage,
   /\{focusedUser && detailOpen && \([\s\S]*<AdminModal title="Detalhe do usuario" size="lg"/,

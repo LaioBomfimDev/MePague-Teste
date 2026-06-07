@@ -11,7 +11,9 @@
     "vapid": "web-push generate-vapid-keys",
     "test:auth-registration": "node scripts/check-auth-registration-flow.mjs",
     "test:debt-ui": "node scripts/check-debt-presentation.mjs",
-    "smoke": "node scripts/smoke-routes.mjs",
+    "smoke": "npm run smoke:routes && npm run smoke:admin-detail",
+    "smoke:routes": "node scripts/smoke-routes.mjs",
+    "smoke:admin-detail": "node scripts/check-admin-detail-timeline.mjs && node scripts/smoke-admin-detail-interaction.mjs",
     "test:notifications": "node scripts/check-notifications-flow.mjs",
     "test:admin-detail": "node scripts/check-admin-detail-timeline.mjs",
     "start": "next start",
@@ -29,6 +31,7 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

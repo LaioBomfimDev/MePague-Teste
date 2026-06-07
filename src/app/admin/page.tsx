@@ -14,6 +14,7 @@ import {
   FileClock,
   KeyRound,
   Lock,
+  LogOut,
   Mail,
   NotebookPen,
   RefreshCw,
@@ -118,6 +119,20 @@ const usageSignalClass: Record<AdminUserUsageSignal, string> = {
   trial: "border-blue-100 bg-blue-50 text-ios-blue",
 };
 
+const emptyActivitySummary: AdminUserSummary["activity"] = {
+  chargeLogCount: 0,
+  customerCount: 0,
+  debtCount: 0,
+  lastUserActionAt: null,
+  lastUserActionLabel: "Sem acao registrada",
+  openDebtCount: 0,
+  paidDebtCount: 0,
+  paymentCount: 0,
+  usageDescription: "Nao ha login nem registros operacionais no app.",
+  usageLabel: "Nunca entrou",
+  usageSignal: "no_login",
+};
+
 const sensitiveAuditActions = new Set([
   "admin.password_reset",
   "admin.user_deleted",
@@ -207,6 +222,16 @@ function isAdminAuditLog(log: AuditLog) {
   return log.action.startsWith("admin.") || log.tableName === "admin";
 }
 
+function normalizeAdminUserSummary(item: AdminUserSummary): AdminUserSummary {
+  return {
+    ...item,
+    activity: { ...emptyActivitySummary, ...(item.activity || {}) },
+    adminNotes: item.adminNotes || "",
+    riskTags: Array.isArray(item.riskTags) ? item.riskTags : [],
+    statusReason: item.statusReason || "",
+  };
+}
+
 function downloadCsv(users: AdminUserSummary[]) {
   const header = ["nome", "email", "status", "plano", "perfil", "ultimo_acesso", "risco", "marcadores"];
   const rows = users.map((user) =>
@@ -233,7 +258,7 @@ function downloadCsv(users: AdminUserSummary[]) {
 }
 
 export default function AdminPage() {
-  const { user } = useAuth();
+  const { logout, user } = useAuth();
   const [activeTab, setActiveTab] = useState<AdminTab>("users");
   const [users, setUsers] = useState<AdminUserSummary[]>([]);
   const [logs, setLogs] = useState<AuditLog[]>([]);
@@ -255,6 +280,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [notice, setNotice] = useState("");
   const [noticeTone, setNoticeTone] = useState<"success" | "info" | "error">("success");
   const [temporaryPassword, setTemporaryPassword] = useState("");
@@ -305,7 +331,11 @@ export default function AdminPage() {
         adminFetch("/api/admin/audit-logs"),
       ]);
 
-      setUsers(usersPayload.users || []);
+      const nextUsers = Array.isArray(usersPayload.users)
+        ? (usersPayload.users as AdminUserSummary[]).map(normalizeAdminUserSummary)
+        : [];
+
+      setUsers(nextUsers);
       setSchemaReady(usersPayload.schemaReady !== false);
       setLogs(logsPayload.logs || []);
     } catch (error) {
@@ -390,6 +420,17 @@ export default function AdminPage() {
     setNoticeTone(tone);
     setNotice(message);
     window.setTimeout(() => setNotice(""), 2800);
+  }
+
+  async function handleLogout() {
+    setLoggingOut(true);
+
+    try {
+      await logout();
+    } catch (error) {
+      setLoggingOut(false);
+      showNotice(error instanceof Error ? error.message : "Nao foi possivel sair da conta.", "error");
+    }
   }
 
   function toggleSelected(userId: string) {
@@ -595,14 +636,26 @@ export default function AdminPage() {
           fallbackHref="/admin"
           showBack={false}
           action={
-            <button
-              type="button"
-              onClick={loadAdminData}
-              className="w-10 h-10 rounded-xl bg-white text-gray-700 flex items-center justify-center btn-press border border-gray-100"
-              aria-label="Atualizar"
-            >
-              <RefreshCw size={18} />
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={loadAdminData}
+                className="w-10 h-10 rounded-xl bg-white text-gray-700 flex items-center justify-center btn-press border border-gray-100"
+                aria-label="Atualizar"
+              >
+                <RefreshCw size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                disabled={loggingOut}
+                className="w-10 h-10 rounded-xl bg-red-50 text-red-500 flex items-center justify-center btn-press border border-red-100 disabled:opacity-50"
+                aria-label={loggingOut ? "Saindo" : "Sair da conta"}
+                title="Sair da conta"
+              >
+                <LogOut size={18} />
+              </button>
+            </>
           }
         />
 
@@ -923,7 +976,7 @@ export default function AdminPage() {
 
                         <div className="flex flex-wrap gap-2">
                           <button type="button" onClick={() => openDetail(item.id)} className="admin-action bg-gray-100 text-gray-700">
-                            <Eye size={14} /> Detalhe
+                            <Eye size={14} /> Detalhes
                           </button>
                           <button onClick={() => updateStatus([item.id], "active")} disabled={item.status === "active"} className="admin-action bg-green-50 text-green-700 disabled:opacity-40">
                             <CheckCircle2 size={14} /> Ativar
