@@ -20,7 +20,15 @@ import { useAppData } from "@/hooks/useAppData";
 import { usePersonalizedChargeMessage } from "@/hooks/usePersonalizedChargeMessage";
 import { saveLearnedChargeMessageTemplate } from "@/lib/chargeMessageTemplates";
 import { deleteDebt, markDebtAsOpen, recordChargeLog, recordPayment, updateCustomer, updateDebt } from "@/lib/database";
-import { getDebtCardActions, getOpenDebtSummary, type DebtCardAction, type DebtSummaryTone } from "@/lib/debtPresentation";
+import {
+  getDebtCardActions,
+  getNextChargeAction,
+  getOpenDebtSummary,
+  type DebtCardAction,
+  type DebtSummaryTone,
+  type NextChargeAction,
+  type NextChargeActionTone,
+} from "@/lib/debtPresentation";
 import {
   formatCurrency,
   formatCurrencyInput,
@@ -32,7 +40,7 @@ import {
   parseCurrencyInput,
   type ChargeMessageInput,
 } from "@/lib/format";
-import type { DebtWithCustomer, MessageTone } from "@/lib/types";
+import type { ChargeLog, DebtWithCustomer, MessageTone, Payment } from "@/lib/types";
 
 const toneOptions: Array<{ value: MessageTone; label: string }> = [
   { value: "friendly", label: "Amigável" },
@@ -44,11 +52,38 @@ const summaryToneClassNames: Record<DebtSummaryTone, string> = {
   info: "bg-blue-50 text-blue-500",
   success: "bg-green-50 text-green-600",
 };
+const nextActionToneClassNames: Record<NextChargeActionTone, string> = {
+  danger: "bg-red-50 text-red-500",
+  info: "bg-blue-50 text-blue-500",
+  neutral: "bg-gray-50 text-gray-500",
+  success: "bg-green-50 text-green-600",
+  warning: "bg-amber-50 text-amber-600",
+};
+const timelineToneClassNames: Record<TimelineTone, string> = {
+  info: "bg-blue-50 text-blue-500",
+  neutral: "bg-gray-50 text-gray-500",
+  success: "bg-green-50 text-green-600",
+  warning: "bg-amber-50 text-amber-600",
+};
+const toneLabels: Record<MessageTone, string> = {
+  firm: "firme",
+  friendly: "amigável",
+  overdue: "atraso",
+};
+
+type TimelineTone = "info" | "neutral" | "success" | "warning";
+type CustomerTimelineItem = {
+  date: string;
+  detail: string;
+  id: string;
+  title: string;
+  tone: TimelineTone;
+};
 
 export default function DebtorDetailPage() {
   const params = useParams<{ customerId: string }>();
   const customerId = params.customerId;
-  const { chargeLogs, customers, debts, loading, profile, user } = useAppData();
+  const { chargeLogs, customers, debts, loading, payments, profile, user } = useAppData();
   const [tone, setTone] = useState<MessageTone>("friendly");
   const [copied, setCopied] = useState(false);
   const [busyDebtId, setBusyDebtId] = useState<string | null>(null);
@@ -71,11 +106,32 @@ export default function DebtorDetailPage() {
   const totalOriginal = openDebts.reduce((sum, debt) => sum + debt.amount, 0);
   const totalPaid = customerDebts.reduce((sum, debt) => sum + debt.paidAmount, 0);
   const overdueCount = openDebts.filter((debt) => debt.isOverdue).length;
+  const dueTodayCount = openDebts.filter((debt) => !debt.isOverdue && debt.daysUntilDue === 0).length;
+  const dueSoonCount = openDebts.filter((debt) => debt.daysUntilDue > 0 && debt.daysUntilDue <= 7).length;
   const openDebtSummary = getOpenDebtSummary(openDebts.length, overdueCount);
   const maxDaysOverdue = openDebts.reduce((max, debt) => Math.max(max, debt.daysOverdue), 0);
   const nextDebt = openDebts
     .slice()
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0];
+  const lastCharge = useMemo(
+    () =>
+      chargeLogs
+        .filter((log) => log.customerId === customerId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0],
+    [chargeLogs, customerId],
+  );
+  const nextAction = useMemo(
+    () =>
+      getNextChargeAction({
+        dueSoonCount,
+        dueTodayCount,
+        lastChargedAt: lastCharge?.createdAt,
+        maxDaysOverdue,
+        openCount: openDebts.length,
+        overdueCount,
+      }),
+    [dueSoonCount, dueTodayCount, lastCharge?.createdAt, maxDaysOverdue, openDebts.length, overdueCount],
+  );
   const effectiveTone = overdueCount > 0 && tone === "friendly" ? "overdue" : tone;
   const messageInput = useMemo<ChargeMessageInput>(
     () => ({
@@ -96,9 +152,10 @@ export default function DebtorDetailPage() {
   }, [generatedMessage]);
 
   const installmentGroups = useMemo(() => buildInstallmentGroups(customerDebts), [customerDebts]);
-  const lastCharge = chargeLogs
-    .filter((log) => log.customerId === customerId)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  const timelineItems = useMemo(
+    () => buildCustomerTimeline(customerDebts, payments, chargeLogs),
+    [chargeLogs, customerDebts, payments],
+  );
 
   async function runDebtAction(debtId: string, action: () => Promise<void>) {
     setBusyDebtId(debtId);
@@ -210,6 +267,20 @@ export default function DebtorDetailPage() {
         />
       )}
 
+      <NextChargeActionCard
+        action={nextAction}
+        amount={totalOpen}
+        customerId={customerId}
+        daysOverdue={maxDaysOverdue}
+        debtorName={debtorName}
+        debtsCount={openDebts.length}
+        dueDate={nextDebt?.dueDate}
+        phone={debtorPhone}
+        pixKey={profile?.pixKey}
+        tone={effectiveTone}
+        userId={user?.id}
+      />
+
       <section className="card rounded-[18px] p-5 space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -281,6 +352,8 @@ export default function DebtorDetailPage() {
           </div>
         )}
       </section>
+
+      <CustomerTimeline items={timelineItems} />
 
       {installmentGroups.length > 0 && (
         <section className="space-y-3">
@@ -372,6 +445,170 @@ export default function DebtorDetailPage() {
       )}
     </div>
   );
+}
+
+function NextChargeActionCard({
+  action,
+  amount,
+  customerId,
+  daysOverdue,
+  debtorName,
+  debtsCount,
+  dueDate,
+  phone,
+  pixKey,
+  tone,
+  userId,
+}: {
+  action: NextChargeAction;
+  amount: number;
+  customerId: string;
+  daysOverdue: number;
+  debtorName: string;
+  debtsCount: number;
+  dueDate?: string;
+  phone: string;
+  pixKey?: string;
+  tone: MessageTone;
+  userId?: string;
+}) {
+  return (
+    <section className="card rounded-[14px] p-4 flex items-center justify-between gap-3">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${nextActionToneClassNames[action.tone]}`}>
+          <CalendarClock size={18} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Próxima ação</p>
+          <h2 className="font-semibold text-sm text-gray-950 truncate">{action.label}</h2>
+          <p className="text-xs text-gray-400 mt-0.5">{action.detail}</p>
+        </div>
+      </div>
+
+      {action.shouldCharge && debtsCount > 0 && (
+        <ChargeMessageButton
+          amount={amount}
+          customerId={customerId}
+          daysOverdue={daysOverdue}
+          debtorName={debtorName}
+          debtsCount={debtsCount}
+          defaultTone={tone}
+          dueDate={dueDate}
+          iconSize={14}
+          label={action.actionLabel}
+          phone={phone}
+          pixKey={pixKey}
+          userId={userId}
+          className="shrink-0 px-3 py-2 rounded-xl bg-gray-900 text-white text-xs font-semibold flex items-center justify-center gap-1.5 btn-press"
+        />
+      )}
+    </section>
+  );
+}
+
+function CustomerTimeline({ items }: { items: CustomerTimelineItem[] }) {
+  return (
+    <section className="space-y-3">
+      <h2 className="text-sm font-semibold text-gray-900 px-1">Linha do tempo</h2>
+      <div className="card rounded-[14px] overflow-hidden">
+        {items.length === 0 ? (
+          <div className="p-4 text-sm text-gray-400 text-center">As próximas movimentações aparecem aqui.</div>
+        ) : (
+          items.map((item, index) => (
+            <div
+              key={item.id}
+              className={`p-4 flex gap-3 ${index === items.length - 1 ? "" : "border-b border-gray-100"}`}
+            >
+              <div className={`mt-0.5 w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${timelineToneClassNames[item.tone]}`}>
+                <CalendarClock size={16} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="font-semibold text-sm text-gray-900">{item.title}</p>
+                  <span className="shrink-0 text-[11px] text-gray-400">{formatDateTime(item.date)}</span>
+                </div>
+                <p className="text-xs text-gray-400 mt-1 leading-5">{item.detail}</p>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function buildCustomerTimeline(debts: DebtWithCustomer[], payments: Payment[], chargeLogs: ChargeLog[]) {
+  const customerId = debts[0]?.customerId;
+  const debtIds = new Set(debts.map((debt) => debt.id));
+  const debtById = new Map(debts.map((debt) => [debt.id, debt]));
+  const paymentDebtIds = new Set(payments.map((payment) => payment.debtId));
+  const items: CustomerTimelineItem[] = [];
+
+  chargeLogs
+    .filter((log) => log.customerId === customerId || (log.debtId ? debtIds.has(log.debtId) : false))
+    .forEach((log) => {
+      items.push({
+        date: log.createdAt,
+        detail: [`Tom ${toneLabels[log.tone]}`, truncateTimelineText(log.message)].filter(Boolean).join(" · "),
+        id: `charge-${log.id}`,
+        title: log.action === "sent" ? "Cobrança enviada" : "Mensagem copiada",
+        tone: "info",
+      });
+    });
+
+  payments
+    .filter((payment) => payment.customerId === customerId || debtIds.has(payment.debtId))
+    .forEach((payment) => {
+      const debt = debtById.get(payment.debtId);
+
+      items.push({
+        date: payment.paidAt,
+        detail: [formatCurrency(payment.amount), payment.note, debt?.description || debt?.baseDescription].filter(Boolean).join(" · "),
+        id: `payment-${payment.id}`,
+        title: "Pagamento registrado",
+        tone: "success",
+      });
+    });
+
+  debts.forEach((debt) => {
+    if (debt.createdAt) {
+      items.push({
+        date: debt.createdAt,
+        detail: `${formatCurrency(debt.amount)} · vencimento ${formatDate(debt.dueDate)}`,
+        id: `debt-created-${debt.id}`,
+        title: "Cobrança cadastrada",
+        tone: "neutral",
+      });
+    }
+
+    if (debt.status === "paid" && debt.paidAt && !paymentDebtIds.has(debt.id)) {
+      items.push({
+        date: debt.paidAt,
+        detail: `${formatCurrency(debt.paidAmount || debt.amount)} · ${debt.description || debt.baseDescription}`,
+        id: `debt-paid-${debt.id}`,
+        title: "Pagamento confirmado",
+        tone: "success",
+      });
+    }
+
+    if (debt.status === "open" && debt.updatedAt && debt.updatedAt !== debt.createdAt) {
+      items.push({
+        date: debt.updatedAt,
+        detail: `${formatCurrency(debt.amount)} · vencimento ${formatDate(debt.dueDate)}`,
+        id: `debt-updated-${debt.id}`,
+        title: "Cobrança atualizada",
+        tone: "warning",
+      });
+    }
+  });
+
+  return items.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8);
+}
+
+function truncateTimelineText(value: string, maxLength = 96) {
+  if (value.length <= maxLength) return value;
+
+  return `${value.slice(0, maxLength).trim()}...`;
 }
 
 function DebtSection({

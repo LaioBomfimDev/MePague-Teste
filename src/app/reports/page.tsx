@@ -84,7 +84,7 @@ export default function ReportsPage() {
             />
             <MetricCard
               label="Previsto 7 dias"
-              value={formatCurrency(stats.forecast7Days)}
+              value={formatCurrency(reportStats.forecast7Days)}
               icon={FileText}
               color="text-blue-500"
               bg="bg-blue-50"
@@ -140,7 +140,7 @@ export default function ReportsPage() {
             />
             <MetricCard
               label="Previsto 30 dias"
-              value={formatCurrency(stats.forecast30Days)}
+              value={formatCurrency(reportStats.forecast30Days)}
               icon={Share2}
               color="text-purple-500"
               bg="bg-purple-50"

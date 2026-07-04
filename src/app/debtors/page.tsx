@@ -1,44 +1,54 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ChevronRight, Search, UserPlus, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { CheckSquare, ChevronRight, Copy, MessageCircle, Search, Send, Square, UserPlus, X } from "lucide-react";
 import ChargeMessageButton from "@/components/ChargeMessageButton";
+import EditableMessageBox from "@/components/EditableMessageBox";
 import MobileHeader from "@/components/MobileHeader";
 import { SkeletonListItem } from "@/components/Skeleton";
 import { useAppData } from "@/hooks/useAppData";
-import { formatCurrency } from "@/lib/format";
+import { recordChargeLog } from "@/lib/database";
+import { buildChargeMessage, buildWhatsappUrl, formatCurrency } from "@/lib/format";
+import type { MessageTone } from "@/lib/types";
 
 type DebtorFilter = "open" | "overdue" | "due-today";
+type DebtorListItem = {
+  amount: number;
+  avatar: string;
+  debts: number;
+  dueToday: number;
+  id: string;
+  maxDaysOverdue: number;
+  name: string;
+  nextDueDate?: string;
+  overdue: number;
+  phone: string;
+};
 
 const filterOptions: Array<{ value: DebtorFilter; label: string }> = [
   { value: "open", label: "Em aberto" },
   { value: "overdue", label: "Atrasadas" },
   { value: "due-today", label: "Vence hoje" },
 ];
+const bulkToneOptions: Array<{ value: MessageTone; label: string }> = [
+  { value: "friendly", label: "Amigável" },
+  { value: "firm", label: "Firme" },
+  { value: "overdue", label: "Atraso" },
+];
 
 export default function DebtorsPage() {
   const { debts, loading, profile, user } = useAppData();
   const searchParams = useSearchParams();
   const [search, setSearch] = useState("");
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [selectedDebtorIds, setSelectedDebtorIds] = useState<Set<string>>(() => new Set());
   const currentFilter = getFilter(searchParams.get("filter"));
 
   const debtors = useMemo(() => {
-    const grouped = new Map<
-      string,
-      {
-        id: string;
-        name: string;
-        phone: string;
-        amount: number;
-        debts: number;
-        overdue: number;
-        maxDaysOverdue: number;
-        dueToday: number;
-        avatar: string;
-      }
-    >();
+    const grouped = new Map<string, DebtorListItem>();
 
     debts
       .filter((debt) => {
@@ -57,6 +67,7 @@ export default function DebtorsPage() {
           overdue: 0,
           maxDaysOverdue: 0,
           dueToday: 0,
+          nextDueDate: debt.dueDate,
           avatar: debt.customerName.slice(0, 2).toUpperCase(),
         };
 
@@ -65,6 +76,7 @@ export default function DebtorsPage() {
         current.overdue += debt.isOverdue ? 1 : 0;
         current.maxDaysOverdue = Math.max(current.maxDaysOverdue, debt.daysOverdue);
         current.dueToday += !debt.isOverdue && debt.daysUntilDue === 0 ? 1 : 0;
+        current.nextDueDate = current.nextDueDate && current.nextDueDate < debt.dueDate ? current.nextDueDate : debt.dueDate;
         grouped.set(debt.customerId, current);
       });
 
@@ -72,6 +84,47 @@ export default function DebtorsPage() {
       .filter((debtor) => debtor.name.toLowerCase().includes(search.toLowerCase()))
       .sort((a, b) => b.overdue - a.overdue || b.amount - a.amount);
   }, [currentFilter, debts, search]);
+  const selectedDebtors = useMemo(
+    () => debtors.filter((debtor) => selectedDebtorIds.has(debtor.id)),
+    [debtors, selectedDebtorIds],
+  );
+  const allVisibleSelected = debtors.length > 0 && selectedDebtors.length === debtors.length;
+
+  useEffect(() => {
+    setSelectedDebtorIds((current) => {
+      const visibleIds = new Set(debtors.map((debtor) => debtor.id));
+      const next = new Set(Array.from(current).filter((id) => visibleIds.has(id)));
+
+      return next.size === current.size ? current : next;
+    });
+  }, [debtors]);
+
+  function toggleDebtorSelection(debtorId: string) {
+    setSelectedDebtorIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(debtorId)) {
+        next.delete(debtorId);
+      } else {
+        next.add(debtorId);
+      }
+
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedDebtorIds(new Set());
+  }
+
+  function toggleVisibleSelection() {
+    if (allVisibleSelected) {
+      clearSelection();
+      return;
+    }
+
+    setSelectedDebtorIds(new Set(debtors.map((debtor) => debtor.id)));
+  }
 
   return (
     <div className="p-5 pb-28 space-y-5 page-transition">
@@ -124,6 +177,29 @@ export default function DebtorsPage() {
         ))}
       </div>
 
+      {!loading && debtors.length > 0 && (
+        <div className="card rounded-[14px] p-3 flex items-center justify-between gap-3 animate-emerge stagger-2">
+          <button
+            type="button"
+            onClick={toggleVisibleSelection}
+            className="flex items-center gap-2 text-xs font-semibold text-gray-600"
+          >
+            {allVisibleSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+            {allVisibleSelected ? "Limpar seleção" : "Selecionar visíveis"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setBulkOpen(true)}
+            disabled={selectedDebtors.length === 0}
+            className="px-3 py-2 rounded-xl bg-gray-900 text-white text-xs font-semibold flex items-center gap-1.5 disabled:opacity-40"
+          >
+            <MessageCircle size={14} />
+            Cobrar {selectedDebtors.length}
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="space-y-2">
           <SkeletonListItem />
@@ -139,6 +215,16 @@ export default function DebtorsPage() {
         <div className="space-y-2 stagger-fade">
           {debtors.map((debtor) => (
             <div key={debtor.id} className="card rounded-[14px] p-4 flex items-center gap-3 btn-press">
+              <button
+                type="button"
+                onClick={() => toggleDebtorSelection(debtor.id)}
+                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                  selectedDebtorIds.has(debtor.id) ? "bg-ios-soft-blue text-ios-blue" : "bg-gray-50 text-gray-300"
+                }`}
+                aria-label={selectedDebtorIds.has(debtor.id) ? `Remover ${debtor.name} do lote` : `Adicionar ${debtor.name} ao lote`}
+              >
+                {selectedDebtorIds.has(debtor.id) ? <CheckSquare size={17} /> : <Square size={17} />}
+              </button>
               <Link href={`/debtors/${debtor.id}`} className="flex items-center gap-3 flex-1 min-w-0">
                 <div className="w-11 h-11 rounded-xl bg-gray-100 flex items-center justify-center text-gray-500 font-medium text-xs border border-gray-200">
                   {debtor.avatar}
@@ -186,7 +272,203 @@ export default function DebtorsPage() {
           ))}
         </div>
       )}
+
+      {bulkOpen && selectedDebtors.length > 0 && (
+        <BulkChargeModal
+          debtors={selectedDebtors}
+          onClose={() => setBulkOpen(false)}
+          onDone={() => {
+            setBulkOpen(false);
+            clearSelection();
+          }}
+          pixKey={profile?.pixKey}
+          userId={user?.id}
+        />
+      )}
     </div>
+  );
+}
+
+function BulkChargeModal({
+  debtors,
+  onClose,
+  onDone,
+  pixKey,
+  userId,
+}: {
+  debtors: DebtorListItem[];
+  onClose: () => void;
+  onDone: () => void;
+  pixKey?: string;
+  userId?: string;
+}) {
+  const [index, setIndex] = useState(0);
+  const activeIndex = Math.min(index, Math.max(debtors.length - 1, 0));
+  const activeDebtor = debtors[activeIndex];
+  const [tone, setTone] = useState<MessageTone>("friendly");
+  const generatedMessage = useMemo(
+    () =>
+      buildChargeMessage({
+        amount: activeDebtor?.amount || 0,
+        daysOverdue: activeDebtor?.maxDaysOverdue || 0,
+        debtorName: activeDebtor?.name || "",
+        debtsCount: activeDebtor?.debts || 0,
+        dueDate: activeDebtor?.nextDueDate,
+        pixKey,
+        tone,
+      }),
+    [activeDebtor?.amount, activeDebtor?.debts, activeDebtor?.maxDaysOverdue, activeDebtor?.name, activeDebtor?.nextDueDate, pixKey, tone],
+  );
+  const [messageText, setMessageText] = useState(generatedMessage);
+  const [copied, setCopied] = useState(false);
+  const canUseMessage = messageText.trim().length > 0;
+  const isLast = activeIndex >= debtors.length - 1;
+
+  useEffect(() => {
+    setTone(activeDebtor?.overdue ? "overdue" : "friendly");
+  }, [activeDebtor?.id, activeDebtor?.overdue]);
+
+  useEffect(() => {
+    setMessageText(generatedMessage);
+    setCopied(false);
+  }, [generatedMessage]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
+
+  async function logCharge(action: "copied" | "sent") {
+    if (!activeDebtor || !userId) return;
+
+    try {
+      await recordChargeLog(userId, {
+        action,
+        customerId: activeDebtor.id,
+        customerName: activeDebtor.name,
+        message: messageText,
+        tone,
+      });
+    } catch {
+      // O envio manual pelo WhatsApp não deve depender do histórico.
+    }
+  }
+
+  async function handleCopy() {
+    if (!canUseMessage) return;
+
+    await navigator.clipboard.writeText(messageText);
+    await logCharge("copied");
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1400);
+  }
+
+  function handleSend() {
+    if (!activeDebtor || !canUseMessage) return;
+
+    window.open(buildWhatsappUrl(activeDebtor.phone, messageText), "_blank", "noopener,noreferrer");
+    void logCharge("sent");
+  }
+
+  function handleNext() {
+    if (isLast) {
+      onDone();
+      return;
+    }
+
+    setIndex((current) => Math.min(current + 1, debtors.length - 1));
+  }
+
+  if (!activeDebtor || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="app-modal z-[100]">
+      <button type="button" aria-label="Fechar cobrança em lote" className="app-modal__backdrop" onClick={onClose} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Cobrança em lote"
+        className="app-modal__panel relative w-full max-w-lg bg-white rounded-[1.4rem] p-5 shadow-2xl space-y-4"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">
+              {activeIndex + 1} de {debtors.length}
+            </p>
+            <h2 className="text-lg font-semibold text-gray-950 mt-0.5">{activeDebtor.name}</h2>
+            <p className="text-xs text-gray-400 mt-1">
+              {formatCurrency(activeDebtor.amount)} · {activeDebtor.debts} cobrança{activeDebtor.debts === 1 ? "" : "s"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-9 h-9 rounded-xl bg-gray-50 text-gray-500 flex items-center justify-center"
+            aria-label="Fechar"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-1 p-1 bg-gray-50 rounded-xl">
+          {bulkToneOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setTone(option.value)}
+              className={`py-2 rounded-lg text-xs font-semibold transition ${
+                tone === option.value ? "bg-white text-gray-950 shadow-ios" : "text-gray-400"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        <EditableMessageBox value={messageText} onChange={setMessageText} rows={7} />
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={handleCopy}
+            disabled={!canUseMessage}
+            className="p-3 rounded-xl bg-gray-900 text-white font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            <Copy size={16} />
+            {copied ? "Copiada" : "Copiar"}
+          </button>
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={!canUseMessage}
+            className="p-3 rounded-xl bg-green-500 text-white font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            <Send size={16} />
+            WhatsApp
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleNext}
+          className="w-full p-3 rounded-xl bg-gray-50 text-gray-700 font-semibold text-sm btn-press"
+        >
+          {isLast ? "Concluir lote" : "Próximo devedor"}
+        </button>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
